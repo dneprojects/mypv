@@ -55,7 +55,7 @@ jobs:
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: Release v${{ steps.version.outputs.version }}
-          body: "Automatic release based on update of manifest.json"
+          generate_release_notes: true
           draft: false
           prerelease: false
         env:
