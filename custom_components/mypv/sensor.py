@@ -1,30 +1,30 @@
 """Sensors of myPV integration."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 import logging
 from typing import Any
 
 import pytz
 
-from homeassistant.components.integration.sensor import IntegrationSensor, UnitOfTime
+from homeassistant.components.integration.sensor import IntegrationSensor
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
-    datetime,
 )
 from homeassistant.const import (
+    EntityCategory,
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
     UnitOfEnergy,
     UnitOfFrequency,
     UnitOfPower,
     UnitOfTemperature,
+    UnitOfTime,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import COMM_HUB, DOMAIN

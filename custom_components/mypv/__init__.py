@@ -2,10 +2,10 @@
 
 from httpcore import TimeoutException
 
-from homeassistant.components.config import entity_registry
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.core import _LOGGER, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.device_registry import DeviceEntry
 from homeassistant.helpers.service import async_extract_entity_ids
 
@@ -20,6 +20,8 @@ PLATFORMS: list[str] = [
     "sensor",
     "switch",
 ]
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema("mypv")
 
 
 async def async_setup(hass: HomeAssistant, config):
@@ -42,7 +44,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     async def async_reset_sensor(call):
         """Service call handler to reset a sensor."""
-        entity_ids = await async_extract_entity_ids(hass, call)
+        entity_ids = await async_extract_entity_ids(call)
 
         sensor_component = hass.data.get("sensor")
         if not sensor_component:
@@ -87,7 +89,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
 
 async def async_remove_config_entry_device(
-    hass: HomeAssistant, config_entry: ConfigEntry, device_entry: DeviceEntry
+    config_entry: ConfigEntry, device_entry: DeviceEntry
 ) -> bool:
     """Remove a config entry from a device."""
     return True
