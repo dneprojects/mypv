@@ -75,6 +75,7 @@ class MpvCtrlTypeSelect(CoordinatorEntity, SelectEntity):
             109: "Carlo Gavazzi EM24 Manual",
             111: "Sungrow Manual",
             112: "Fronius Gen24 Manual",
+            119: "Solax Manual",
             200: "Huawei (Modbus RTU)",
             201: "Growatt (Modbus RTU)",
             202: "Solax (Modbus RTU)",
