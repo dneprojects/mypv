@@ -26,6 +26,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import slugify
 
 from .const import COMM_HUB, DOMAIN
 
@@ -327,7 +328,7 @@ class MpvEnergySensor(IntegrationSensor, MpvSensor):
         IntegrationSensor.__init__(
             self,
             device.comm.hass,
-            source_entity=f"sensor.{(self.name_by_user + '_' + source[0]).replace(' ', '_').replace('-', '_').lower()}",
+            source_entity=f"sensor.{slugify(self.name_by_user + '_' + source[0])}",
             name=info[0],
             round_digits=1,
             integration_method="trapezoidal",

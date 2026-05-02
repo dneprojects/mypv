@@ -1,6 +1,6 @@
 {
   "domain": "mypv",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "name": "myPV",
   "documentation": "https://github.com/dneprojects/mvpv",
   "config_flow": true,
