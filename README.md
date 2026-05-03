@@ -30,6 +30,7 @@ Usually, devices get detected automatically if they operate in the same subnet a
 ## Features
 
 The myPV custom integration works locally in the home network utilizing the http api. So it doesn't need any login.
+- Automatic discovery of devices.
 - The integration is written to support multiple devices. Meanwhile, it has beeny tested with ELWA, ELWA 2, AC-THOR 1, AC-THOR 9s, and SOLTHOR-DC. For multiple devices, please use the configuration step with a different IP address.
 - It offers binary sensors and sensors for all data points provided by the myPV devices.
 - The heating power can be set manually by an input number between 0 and 3000 W (3600 W for ELWA 2, 9000 W for AC THOR 9s). 
