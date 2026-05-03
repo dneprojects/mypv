@@ -1,51 +1,51 @@
 {
+  "title": "myPV",
   "config": {
-    "title": "myPV",
     "step": {
       "user": {
+        "title": "Mit myPV Gerät verbinden",
+        "description": "Wähle oder gib die IP-Adresse deines myPV-Geräts ein.",
         "data": {
-          "dev_ip": "IP-Adresse für myPV Gerät",
-          "update_interval": "Update-Intervall [s]",
-          "min_ip": "Untere Grenze des IP-Suchbereichs für myPV Geräte",
-          "max_ip": "Obere Grenze des IP-Suchbereichs für myPV Geräte"
+          "dev_ip": "IP-Adresse",
+          "update_interval": "Aktualisierungsintervall (Sekunden)"
         }
+      },
+      "confirm": {
+        "title": "myPV Gerät entdeckt",
+        "description": "Möchtest du das Gerät {name} unter der IP {ip} zu Home Assistant hinzufügen?"
       }
     },
     "error": {
-      "could_not_connect": "Kein myPV-Gerät mit der angegebenen Adresse gefunden",
-      "host_exists": "Gefundenes Gerät wurde bereits konfiguriert",
-      "invalid_interval": "Wert ungültig",
-      "interval_too_short": "Intervall zu kurz, min. 3 s",
-      "interval_too_long": "Intervall zu lang, max. 30 s",
-      "unknown": "Unbekannter Fehler aufgetreten"
+      "could_not_connect": "Verbindung zum Gerät fehlgeschlagen",
+      "host_exists": "Dieses Gerät ist bereits konfiguriert",
+      "invalid_interval": "Das Intervall muss eine Zahl sein",
+      "interval_too_short": "Das Intervall muss mindestens 10 Sekunden betragen",
+      "interval_too_long": "Das Intervall ist zu lang",
+      "unknown": "Ein unerwarteter Fehler ist aufgetreten"
     },
     "abort": {
-      "host_exists": "Gefundenes Gerät wurde bereits konfiguriert"
+      "already_configured": "Gerät ist bereits konfiguriert",
+      "cannot_connect": "Verbindung zum Gerät fehlgeschlagen"
     }
   },
   "options": {
     "step": {
       "init": {
+        "title": "Kommunikation einrichten",
+        "description": "Passe an, wie oft Home Assistant Daten vom Gerät abfragen soll.",
         "data": {
-          "dev_ip": "IP-Adresse für myPV Gerät",
-          "update_interval": "Update-Intervall [s]",
-          "min_ip": "Untere Grenze des IP-Suchbereichs für myPV Geräte",
-          "max_ip": "Obere Grenze des IP-Suchbereichs für myPV Geräte"
-        },
-        "title": "Kommunikationseinstellung"
+          "update_interval": "Aktualisierungsintervall (Sekunden)"
+        }
       }
     },
     "error": {
-      "could_not_connect": "Kein myPV-Gerät mit der angegebenen Adresse gefunden",
-      "host_exists": "Gefundenes Gerät wurde bereits konfiguriert",
-      "invalid_interval": "Wert ungültig",
-      "interval_too_short": "Intervall zu kurz, min. 3 s",
-      "interval_too_long": "Intervall zu lang, max. 30 s",
-      "unknown": "Unbekannter Fehler aufgetreten"
+      "invalid_interval": "Das Intervall muss eine Zahl sein",
+      "interval_too_short": "Das Intervall muss mindestens 10 Sekunden betragen",
+      "interval_too_long": "Das Intervall ist zu lang",
+      "unknown": "Ein unerwarteter Fehler ist aufgetreten"
     },
     "abort": {
-      "host_exists": "Gefundenes Gerät wurde bereits konfiguriert",
-      "options_updated": "Die Optionen wurden aktualisiert."
+      "options_updated": "Die Einstellungen wurden erfolgreich aktualisiert"
     }
   }
 }

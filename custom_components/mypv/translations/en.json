@@ -1,51 +1,51 @@
 {
+  "title": "myPV",
   "config": {
-    "title": "myPV",
     "step": {
       "user": {
+        "title": "Connect to myPV device",
+        "description": "Select or enter the IP address of your myPV device.",
         "data": {
-          "dev_ip": "IP-address of myPV device",
-          "update_interval": "Update interval [s]",
-          "min_ip": "The lower ip address of detection range for myPV devices",
-          "max_ip": "The upper ip address of detection range for myPV devices"
+          "dev_ip": "IP address",
+          "update_interval": "Update interval (seconds)"
         }
+      },
+      "confirm": {
+        "title": "myPV Device Discovered",
+        "description": "Would you like to add the {name} at {ip} to Home Assistant?"
       }
     },
     "error": {
-      "could_not_connect": "No myPV device found with given ip address",
-      "host_exists": "Found host already configured",
-      "invalid_interval": "Invalid value",
-      "interval_too_short": "Interval too short, min. 3 s",
-      "interval_too_long": "Interval too long, max. 30 s",
-      "unknown": "Unknown error"
+      "could_not_connect": "Failed to connect to the device",
+      "host_exists": "This device is already configured",
+      "invalid_interval": "The interval must be a number",
+      "interval_too_short": "The interval must be at least 10 seconds",
+      "interval_too_long": "The interval is too long",
+      "unknown": "An unexpected error occurred"
     },
     "abort": {
-      "host_exists": "Found host already configured"
+      "already_configured": "Device is already configured",
+      "cannot_connect": "Failed to connect to the device"
     }
   },
   "options": {
     "step": {
       "init": {
+        "title": "Setup communication",
+        "description": "Adjust how often Home Assistant should poll the device for data.",
         "data": {
-          "dev_ip": "IP-address of myPV device",
-          "update_interval": "Update interval [s]",
-          "min_ip": "The lower ip address of detection range for myPV devices",
-          "max_ip": "The upper ip address of detection range for myPV devices"
-        },
-        "title": "Setup communication"
+          "update_interval": "Update interval (seconds)"
+        }
       }
     },
     "error": {
-      "could_not_connect": "No myPV device found with given ip address",
-      "host_exists": "Found host already configured",
-      "invalid_interval": "Invalid value",
-      "interval_too_short": "Interval too short, min. 3 s",
-      "interval_too_long": "Interval too long, max. 30 s",
-      "unknown": "Unknown error"
+      "invalid_interval": "The interval must be a number",
+      "interval_too_short": "The interval must be at least 10 seconds",
+      "interval_too_long": "The interval is too long",
+      "unknown": "An unexpected error occurred"
     },
     "abort": {
-      "host_exists": "Found host already configured",
-      "options_updated": "Options updated"
+      "options_updated": "The settings were successfully updated"
     }
   }
 }

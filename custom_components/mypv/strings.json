@@ -3,49 +3,49 @@
   "config": {
     "step": {
       "user": {
+        "title": "Connect to myPV device",
+        "description": "Select or enter the IP address of your myPV device.",
         "data": {
-          "dev_ip": "[%key:common::config_flow::data::dev_ip%]",
-          "update_interval": "[%key:common::options_flow::data::update_interval%]",
-          "min_ip": "[%key:common::config_flow::data::min_ip%]",
-          "max_ip": "[%key:common::config_flow::data::max_ip%]"
+          "dev_ip": "IP address",
+          "update_interval": "Update interval (seconds)"
         }
+      },
+      "confirm": {
+        "title": "myPV Device Discovered",
+        "description": "Would you like to add the {name} at {ip} to Home Assistant?"
       }
     },
     "error": {
-      "could_not_connect": "[%key:common::config_flow::error::min_ip%]",
-      "host_exists": "[%key:common::config_flow::error::min_ip%]",
-      "invalid_interval": "[%key:common::config_flow::error::invalid_interval%]",
-      "interval_too_short": "[%key:common::config_flow::error::interval_too_short%]",
-      "interval_too_long": "[%key:common::config_flow::error::interval_too_long%]",
-      "unknown": "[%key:common::config_flow::error::unknown%]"
+      "could_not_connect": "Failed to connect to the device",
+      "host_exists": "This device is already configured",
+      "invalid_interval": "The interval must be a number",
+      "interval_too_short": "The interval must be at least 10 seconds",
+      "interval_too_long": "The interval is too long",
+      "unknown": "An unexpected error occurred"
     },
     "abort": {
-      "host_exists": "[%key:common::config_flow::abort::min_ip%]"
+      "already_configured": "Device is already configured",
+      "cannot_connect": "Failed to connect to the device"
     }
   },
   "options": {
     "step": {
       "init": {
+        "title": "Setup communication",
+        "description": "Adjust how often Home Assistant should poll the device for data.",
         "data": {
-          "dev_ip": "[%key:common::options_flow::data::dev_ip%]",
-          "update_interval": "[%key:common::options_flow::data::update_interval%]",
-          "min_ip": "[%key:common::options_flow::data::min_ip%]",
-          "max_ip": "[%key:common::options_flow::data::max_ip%]"
-        },
-        "title": "Setup communication"
+          "update_interval": "Update interval (seconds)"
+        }
       }
     },
     "error": {
-      "could_not_connect": "[%key:common::options_flow::error::dev_ip%]",
-      "host_exists": "[%key:common::options_flow::error::dev_ip%]",
-      "invalid_interval": "[%key:common::config_flow::error::invalid_interval%]",
-      "interval_too_short": "[%key:common::config_flow::error::interval_too_short%]",
-      "interval_too_long": "[%key:common::config_flow::error::interval_too_long%]",
-      "unknown": "[%key:common::options_flow::error::unknown%]"
+      "invalid_interval": "The interval must be a number",
+      "interval_too_short": "The interval must be at least 10 seconds",
+      "interval_too_long": "The interval is too long",
+      "unknown": "An unexpected error occurred"
     },
     "abort": {
-      "already_configured": "[%key:common::options_flow::abort::already_configured_device%]",
-      "options_updated": "[%key:common::options_flow::abort::options_updated%]"
+      "options_updated": "The settings were successfully updated"
     }
   }
 }

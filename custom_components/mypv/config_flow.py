@@ -31,6 +31,7 @@ def mypv_entries(hass: HomeAssistant):
     try:
         return hass.config_entries.async_entries(DOMAIN)[0].data[CONF_HOSTS]
     except:  # noqa: E722
+        # Return empty list on failure
         return []
 
 
@@ -46,7 +47,7 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
         """Create the options flow."""
-        return MpvOptionsFlow(config_entry)
+        return MpvOptionsFlow()
 
     def __init__(self) -> None:
         """Initialize the config flow."""
@@ -66,6 +67,7 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         device_name = "myPV"
 
         try:
+            # Attempt to fetch device JSON
             response = requests.get(f"http://{dev_ip}/mypv_dev.jsn", timeout=0.5)
             data = json.loads(response.text)
             host_list.append(dev_ip)
@@ -126,44 +128,34 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_confirm(
         self, user_input=None
     ) -> config_entries.ConfigFlowResult:
-        """Confirm setup of a discovered device (IP input hidden)."""
+        """Confirm setup of a discovered device (no input needed)."""
+
         if user_input is not None:
-            update_interval = user_input[UPDATE_INTERVAL]
+            update_interval = CONF_DEFAULT_INTERVAL
 
-            if not (isinstance(update_interval, int)):
-                self._errors[UPDATE_INTERVAL] = "invalid_interval"
-            elif update_interval < CONF_MIN_INTERVAL:
-                self._errors[UPDATE_INTERVAL] = "interval_too_short"
-            elif update_interval > CONF_MAX_INTERVAL:
-                self._errors[UPDATE_INTERVAL] = "interval_too_long"
+            can_connect, ips_found, _ = await self.hass.async_add_executor_job(
+                self._check_host, self._discovery_ip
+            )
 
-            if not self._errors:
-                can_connect, ips_found, _ = await self.hass.async_add_executor_job(
-                    self._check_host, self._discovery_ip
+            if can_connect:
+                final_title = (
+                    f"{self._discovery_name} ({self._discovery_ip})"
+                    if self._discovery_name != "myPV"
+                    else f"myPV ({self._discovery_ip})"
                 )
 
-                if can_connect:
-                    final_title = (
-                        f"{self._discovery_name} ({self._discovery_ip})"
-                        if self._discovery_name != "myPV"
-                        else f"myPV ({self._discovery_ip})"
-                    )
-                    return self.async_create_entry(
-                        title=final_title,
-                        data={
-                            DEV_IP: self._discovery_ip,
-                            UPDATE_INTERVAL: update_interval,
-                            CONF_HOSTS: ips_found,
-                        },
-                    )
-                else:
-                    return self.async_abort(reason="cannot_connect")
+                return self.async_create_entry(
+                    title=final_title,
+                    data={
+                        DEV_IP: self._discovery_ip,
+                        UPDATE_INTERVAL: update_interval,
+                        CONF_HOSTS: ips_found,
+                    },
+                )
+            return self.async_abort(reason="cannot_connect")
 
-        setup_schema = vol.Schema(
-            {
-                vol.Required(UPDATE_INTERVAL, default=CONF_DEFAULT_INTERVAL): int,
-            }
-        )
+        # Provide empty schema to render the form with text
+        setup_schema = vol.Schema({})
 
         return self.async_show_form(
             step_id="confirm",
@@ -179,6 +171,7 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle the manual addition step (with IP dropdown)."""
 
         if not self._discovered_devices and user_input is None:
+            # Perform network scan if no devices are known yet
             devices = await async_discover_mypv_devices()
             for device in devices:
                 if device["ip"] not in self._discovered_devices:
@@ -238,6 +231,7 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is None:
             if self._discovered_devices:
+                # Filter out already configured IPs
                 available_ips = [
                     ip
                     for ip in self._discovered_devices
@@ -287,15 +281,12 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
 
-class MpvOptionsFlow(config_entries.OptionsFlow, MpvConfigFlow):
+class MpvOptionsFlow(config_entries.OptionsFlow):
     """Allow to change options of integration while running."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+    def __init__(self) -> None:
         """Initialize options flow."""
-        super().__init__()
-        self.config_entry = config_entry
         self._errors = {}
-        self._info = {}
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -303,57 +294,42 @@ class MpvOptionsFlow(config_entries.OptionsFlow, MpvConfigFlow):
         """Manage the options."""
         self._errors = {}
 
-        if user_input is None:
-            default_dev_ip = self.config_entry.data[DEV_IP]
-            default_interval = self.config_entry.data[UPDATE_INTERVAL]
-        else:
-            default_dev_ip = user_input[DEV_IP]
-            default_interval = user_input[UPDATE_INTERVAL]
-
-        opt_schema = vol.Schema(
-            {
-                vol.Required(DEV_IP, default=default_dev_ip): str,
-                vol.Required(
-                    "update_interval",
-                    default=default_interval,
-                ): int,
-            }
-        )
-
         if user_input is not None:
-            dev_ip = user_input[DEV_IP]
-            update_interval = user_input[UPDATE_INTERVAL]
-
-            if not (isinstance(update_interval, int)):
-                self._errors[UPDATE_INTERVAL] = "invalid_interval"
+            try:
+                update_interval = int(
+                    user_input.get(UPDATE_INTERVAL, CONF_DEFAULT_INTERVAL)
+                )
+            except ValueError, TypeError:
+                update_interval = CONF_DEFAULT_INTERVAL
 
             if update_interval < CONF_MIN_INTERVAL:
                 self._errors[UPDATE_INTERVAL] = "interval_too_short"
-
-            if update_interval > CONF_MAX_INTERVAL:
+            elif update_interval > CONF_MAX_INTERVAL:
                 self._errors[UPDATE_INTERVAL] = "interval_too_long"
 
-            can_connect, ips_found, _ = await self.hass.async_add_executor_job(
-                self._check_host,
-                dev_ip,
-            )
-
-            conf_data = {
-                DEV_IP: dev_ip,
-                UPDATE_INTERVAL: update_interval,
-                CONF_HOSTS: ips_found,
-            }
-
-            if can_connect and not self._errors:
-                return self.async_update_reload_and_abort(
-                    self.config_entry,
-                    data=conf_data,
-                    title="myPV",
-                    reason="options_updated",
-                    reload_even_if_entry_is_unchanged=False,
+            if not self._errors:
+                return self.async_create_entry(
+                    title="", data={UPDATE_INTERVAL: update_interval}
                 )
-            if not can_connect:
-                self._errors[DEV_IP] = "could_not_connect"
+
+        # Retrieve current interval from options or data
+        raw_interval = self.config_entry.options.get(UPDATE_INTERVAL)
+        if raw_interval is None:
+            raw_interval = self.config_entry.data.get(UPDATE_INTERVAL)
+
+        try:
+            current_interval = (
+                int(raw_interval) if raw_interval is not None else CONF_DEFAULT_INTERVAL
+            )
+        # FIXED: Added parentheses for multiple exceptions in Python 3
+        except ValueError, TypeError:
+            current_interval = CONF_DEFAULT_INTERVAL
+
+        opt_schema = vol.Schema(
+            {
+                vol.Required(UPDATE_INTERVAL, default=current_interval): int,
+            }
+        )
 
         return self.async_show_form(
             step_id="init", data_schema=opt_schema, errors=self._errors
