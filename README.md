@@ -25,7 +25,7 @@ Add integration 'myPV' in the settings section.
 
 ## Configuration
 
-Usually, devices get detected automatically if they operate in the same subnet as the Home Assistant host. However, if a device could not be detected, a manual entry of the ip is via UI still supported. A parameter called update interval is given to determine the polling time interval for the sensor values. The default value is 10 seconds. This value can be changed later, too.
+Usually, devices get detected automatically if they operate in the same subnet as the Home Assistant host. However, if a device could not be detected, a manual entry of the ip is via UI still supported. A parameter called update interval is given to determine the polling time interval for the sensor values. The default value is 10 seconds, it is also used for auto detected devices. This value can be changed later.
 
 ## Features
 
