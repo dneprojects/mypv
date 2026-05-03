@@ -71,8 +71,6 @@ class MpyDevice(CoordinatorEntity):
         """Get setup information, find sensors."""
         self.setup = await self.comm.setup_update(self)
         self.data = await self.comm.data_update(self)
-        await self.comm.state_update(self)
-        await self.init_entities()
         dr.async_get(self._hass).async_get_or_create(
             config_entry_id=self._entry.entry_id,
             identifiers={(DOMAIN, self.serial_number)},
@@ -82,6 +80,8 @@ class MpyDevice(CoordinatorEntity):
             sw_version=self.fw,
             hw_version=self.serial_number,
         )
+        await self.comm.state_update(self)
+        await self.init_entities()
 
     @property
     def unique_id(self):

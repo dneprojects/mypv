@@ -1,9 +1,14 @@
 {
   "domain": "mypv",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "name": "myPV",
   "documentation": "https://github.com/dneprojects/mvpv",
   "config_flow": true,
+  "dhcp": [
+    {
+      "macaddress": "986D35*"
+    }
+  ],
   "dependencies": [],
   "after_dependencies": ["network_connectivity"],
   "codeowners": ["@dneprojects"],

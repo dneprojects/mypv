@@ -2,6 +2,7 @@
 
 from httpcore import TimeoutException
 
+from homeassistant import config_entries
 from homeassistant.components.config import entity_registry
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.core import _LOGGER, HomeAssistant
@@ -11,21 +12,42 @@ from homeassistant.helpers.service import async_extract_entity_ids
 
 from .communicate import MypvCommunicator
 from .const import COMM_HUB, DEV_IP, DOMAIN
+from .discovery import async_discover_mypv_devices
 
 # List of platforms to support. There should be a matching .py file for each
 PLATFORMS: list[str] = [
     "binary_sensor",
     "button",
     "number",
+    "select",
     "sensor",
     "switch",
-    "select",
 ]
 
 
 async def async_setup(hass: HomeAssistant, config):
     """Platform setup, do nothing."""
     hass.data.setdefault(DOMAIN, {})
+
+    # Start network scan in the background to find new myPV devices
+    async def _async_run_discovery():
+        """Background task to discover devices via UDP."""
+        try:
+            devices = await async_discover_mypv_devices()
+            for device in devices:
+                # Trigger the 'async_step_discovery' in config_flow.py
+                hass.async_create_task(
+                    hass.config_entries.flow.async_init(
+                        DOMAIN,
+                        context={"source": config_entries.SOURCE_DISCOVERY},
+                        data={"ip": device["ip"]},
+                    )
+                )
+        except Exception as ex:
+            _LOGGER.error("Failed to run myPV UDP discovery: %s", ex)
+
+    # Launch the discovery task without blocking HA startup
+    hass.async_create_background_task(_async_run_discovery(), "mypv-discovery")
 
     if DOMAIN not in config:
         return True
