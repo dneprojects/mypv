@@ -9,7 +9,7 @@
       "macaddress": "986D35*"
     }
   ],
-  "dependencies": [],
+  "dependencies": ["config", "integration", "network"],
   "after_dependencies": ["network_connectivity"],
   "issue_tracker": "https://github.com/dneprojects/mypv/issues",
   "codeowners": ["@dneprojects"],
