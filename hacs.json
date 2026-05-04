@@ -2,6 +2,5 @@
   "name": "MyPV",
   "content_in_root": false,
   "render_readme": true,
-  "domains": ["binary_sensor", "number", "sensor", "switch", "select"],
-  "homeassistant": "2025.8.0"
+  "homeassistant": "2026.4.0"
 }
