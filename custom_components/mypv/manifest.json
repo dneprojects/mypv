@@ -1,18 +1,18 @@
 {
   "domain": "mypv",
-  "version": "1.2.6",
   "name": "myPV",
-  "documentation": "https://github.com/dneprojects/mvpv",
+  "after_dependencies": ["network_connectivity"],
+  "codeowners": ["@dneprojects"],
   "config_flow": true,
+  "dependencies": ["config", "integration", "network"],
   "dhcp": [
     {
       "macaddress": "986D35*"
     }
   ],
-  "dependencies": ["config", "integration", "network"],
-  "after_dependencies": ["network_connectivity"],
+  "documentation": "https://github.com/dneprojects/mvpv",
+  "iot_class": "local_polling",
   "issue_tracker": "https://github.com/dneprojects/mypv/issues",
-  "codeowners": ["@dneprojects"],
   "requirements": [],
-  "iot_class": "local_polling"
+  "version": "1.2.6"
 }
