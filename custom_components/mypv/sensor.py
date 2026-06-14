@@ -44,9 +44,6 @@ _DEVICE_CLASS_BY_UNIT: dict[str, SensorDeviceClass] = {
     UnitOfFrequency.HERTZ: SensorDeviceClass.FREQUENCY,
 }
 
-# Kinds whose value is textual and therefore must not carry a state class.
-_TEXT_KINDS = ("text", "ip_string", "version")
-
 # Device state enums, keyed by the raw device value. The values are translated
 # through the entity ``state`` translations (keyed by the slugified value).
 DEV_STATE_ENUM_SOLTHOR: dict[int, str] = {
@@ -127,7 +124,10 @@ class MpvSensor(MpvEntity, SensorEntity):
         self._attr_device_class = (
             _DEVICE_CLASS_BY_UNIT.get(info.unit) if info.unit else None
         )
-        if info.kind in _TEXT_KINDS:
+        # Only sensors with a unit are guaranteed numeric; everything else
+        # (text, versions, string enums like "Control source") must not carry
+        # a measurement state class or HA rejects their non-numeric value.
+        if info.unit is None:
             self._attr_state_class = None
         if key.split("_", maxsplit=1)[0] in ("power1", "power2", "power3"):
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
