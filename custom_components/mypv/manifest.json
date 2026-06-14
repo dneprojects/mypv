@@ -4,13 +4,13 @@
   "after_dependencies": ["network_connectivity"],
   "codeowners": ["@dneprojects"],
   "config_flow": true,
-  "dependencies": ["config", "integration", "network"],
+  "dependencies": ["integration", "network"],
   "dhcp": [
     {
       "macaddress": "986D35*"
     }
   ],
-  "documentation": "https://github.com/dneprojects/mvpv",
+  "documentation": "https://github.com/dneprojects/mypv",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/dneprojects/mypv/issues",
   "requirements": [],

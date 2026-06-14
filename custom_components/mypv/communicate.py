@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import CONF_DEFAULT_INTERVAL, CONF_HOSTS, DOMAIN, UPDATE_INTERVAL
+from .const import CONF_HOSTS, DOMAIN
 
 if TYPE_CHECKING:
     from .mypv_device import MpyDevice
@@ -20,6 +20,8 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=5)
+# Fixed polling interval; per HA rules this is not user-configurable.
+SCAN_INTERVAL = timedelta(seconds=10)
 
 
 class MypvCommunicator(DataUpdateCoordinator[None]):
@@ -29,18 +31,12 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
         """Initialize data updater."""
         self.hosts: list[str] = entry.data[CONF_HOSTS]
         self.devices: list[MpyDevice] = []
-        # For systems before v1.0.0
-        if UPDATE_INTERVAL not in entry.data:
-            data = dict(entry.data)
-            data[UPDATE_INTERVAL] = CONF_DEFAULT_INTERVAL
-            hass.config_entries.async_update_entry(entry, data=data)
-        update_interval = timedelta(seconds=entry.data[UPDATE_INTERVAL])
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
             config_entry=entry,
-            update_interval=update_interval,
+            update_interval=SCAN_INTERVAL,
         )
 
     async def initialize(self) -> None:

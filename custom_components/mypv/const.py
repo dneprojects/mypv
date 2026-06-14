@@ -16,14 +16,7 @@ DOMAIN = "mypv"
 COMM_HUB = "mpv_comm"
 
 CONF_HOSTS = "conf_hosts"
-HOST_LIST = "host_list"
-MIN_IP = "min_ip"
-MAX_IP = "max_ip"
 DEV_IP = "dev_ip"
-UPDATE_INTERVAL = "update_interval"
-CONF_DEFAULT_INTERVAL = 10
-CONF_MIN_INTERVAL = 3
-CONF_MAX_INTERVAL = 30
 
 
 class MpvDescription(NamedTuple):
