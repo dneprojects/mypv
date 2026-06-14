@@ -1,22 +1,27 @@
 """Switches of myPV integration."""
 
-import asyncio
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import COMM_HUB, DOMAIN
+from .const import COMM_HUB, DOMAIN, MpvDescription
+from .entity import MpvEntity
+
+if TYPE_CHECKING:
+    from .mypv_device import MpyDevice
 
 _LOGGER = logging.getLogger(__name__)
 
-PID_POWER_ON_VALUE = 3000
-PID_POWER_OFF_VALUE = 0
 
-
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
     """Add all myPV switch entities."""
     comm = hass.data[DOMAIN][entry.entry_id][COMM_HUB]
 
@@ -24,49 +29,25 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
         async_add_entities(device.switches)
 
 
-class MpvSetupSwitch(CoordinatorEntity, SwitchEntity):
-    """Representation of myPV switch."""
+class MpvSetupSwitch(MpvEntity, SwitchEntity):
+    """Representation of a myPV setup switch backed by a setup.jsn key."""
 
     _attr_device_class = SwitchDeviceClass.SWITCH
 
-    def __init__(self, device, key, info) -> None:
+    def __init__(self, device: MpyDevice, key: str, info: MpvDescription) -> None:
         """Initialize the switch."""
-        super().__init__(device.comm)
-        self.device = device
-        self.comm = device.comm
+        super().__init__(device, info.name)
         self._key = key
-        self._name = info[0]
-        self._type = info[2]
-
-    @property
-    def name(self):
-        """Return the name of the switch."""
-        return self._name
-
-    @property
-    def unique_id(self):
-        """Return unique id based on device serial and variable."""
-        return f"{self.device.serial_number}_{self._name}"
-
-    @property
-    def device_info(self):
-        """Return information about the device."""
-        return {
-            "identifiers": {(DOMAIN, self.device.serial_number)},
-            "name": self.device.name,
-            "manufacturer": "myPV",
-            "model": self.device.model,
-        }
+        self._type = info.kind
 
     @property
     def is_on(self) -> bool:
         """Return status of output."""
-        return self.device.setup[self._key] == 1
+        return self.device.setup.get(self._key) == 1
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        self._attr_is_on = self.device.setup[self._key] == 1
         self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs: Any) -> None:
@@ -80,110 +61,32 @@ class MpvSetupSwitch(CoordinatorEntity, SwitchEntity):
         await self.device.update()
 
 
-class MpvBoostSwitch(CoordinatorEntity, SwitchEntity):
-    """Representation of myPV switch."""
+class MpvHttpSwitch(MpvEntity, SwitchEntity):
+    """Switch enabling HTTP control mode of the device."""
 
     _attr_device_class = SwitchDeviceClass.SWITCH
 
-    def __init__(self, device, key, info) -> None:
+    def __init__(self, device: MpyDevice, key: str) -> None:
         """Initialize the switch."""
-        super().__init__(device.comm)
-        self.device = device
-        self.comm = device.comm
+        super().__init__(device, "Enable HTTP")
         self._key = key
-        self._name = info[0]
-        self._type = info[2]
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return self._name
-
-    @property
-    def unique_id(self):
-        """Return unique id based on device serial and variable."""
-        return f"{self.device.serial_number}_{self._name}"
-
-    @property
-    def device_info(self):
-        """Return information about the device."""
-        return {
-            "identifiers": {(DOMAIN, self.device.serial_number)},
-            "name": self.device.name,
-            "manufacturer": "myPV",
-            "model": self.device.model,
-        }
 
     @property
     def is_on(self) -> bool:
         """Return status of output."""
-        return self.device.data[self._key] == 1
+        return self.device.setup.get(self._key) == 1
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        self._attr_is_on = self.device.data[self._key] == 1
         self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Instruct the switch to turn on."""
-        await self.comm.switch_boost(self.device, True)
-        await self.device.update()
-
-    async def async_turn_off(self, **kwargs: Any) -> None:
-        """Instruct the switch to turn off."""
-        await self.comm.switch_boost(self.device, False)
-        await self.device.update()
-
-
-class MpvHttpSwitch(CoordinatorEntity, SwitchEntity):
-    """Representation of myPV switch."""
-
-    _attr_device_class = SwitchDeviceClass.SWITCH
-
-    def __init__(self, device, key) -> None:
-        """Initialize the switch."""
-        super().__init__(device.comm)
-        self.device = device
-        self.comm = device.comm
-        self._key = key
-        self._name = "Enable HTTP"
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return self._name
-
-    @property
-    def unique_id(self):
-        """Return unique id based on device serial and variable."""
-        return f"{self.device.serial_number}_{self._name}"
-
-    @property
-    def device_info(self):
-        """Return information about the device."""
-        return {
-            "identifiers": {(DOMAIN, self.device.serial_number)},
-            "name": self.device.name,
-            "manufacturer": "myPV",
-            "model": self.device.model,
-        }
-
-    @property
-    def is_on(self) -> bool:
-        """Return status of output."""
-        return self.device.setup[self._key] == 1
-
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        self._attr_is_on = self.device.setup[self._key] == 1
-        self.async_write_ha_state()
-
-    async def async_turn_on(self, **kwargs: Any) -> None:
-        """Instruct the switch to turn on."""
+        """Enable HTTP control mode."""
         await self.comm.set_control_mode(self.device, 1)
         await self.device.update()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Instruct the switch to turn off."""
+        """Disable HTTP control mode (back to auto detect)."""
+        await self.comm.set_control_mode(self.device, 0)
+        await self.device.update()

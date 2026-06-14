@@ -76,7 +76,7 @@ class UDPDiscoveryProtocol(asyncio.DatagramProtocol):
 
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
         """Set up the transport and send discovery messages."""
-        self.transport = transport  # type: ignore  # noqa: PGH003
+        self.transport = transport  # type: ignore[assignment]
         sock = transport.get_extra_info("socket")
         if sock:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)

@@ -2,18 +2,28 @@
 
 import asyncio
 import logging
+from typing import TYPE_CHECKING
 
 from homeassistant.components.number import NumberDeviceClass, NumberEntity
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import COMM_HUB, DOMAIN
+from .const import COMM_HUB, DOMAIN, MpvDescription
+from .entity import MpvEntity
+
+if TYPE_CHECKING:
+    from .mypv_device import MpyDevice
 
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
     """Add all myPV number entities."""
     comm = hass.data[DOMAIN][entry.entry_id][COMM_HUB]
 
@@ -21,48 +31,24 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
         async_add_entities(device.controls)
 
 
-class MpvPowerControl(CoordinatorEntity, NumberEntity):
+class MpvPowerControl(MpvEntity, NumberEntity):
     """Representation of myPV power control."""
 
-    _attr_has_entity_name = True
     _attr_device_class = NumberDeviceClass.POWER
     _attr_native_min_value = 0
     _attr_native_step = 1
 
-    def __init__(self, device, key, info) -> None:
+    def __init__(self, device: MpyDevice, key: str, info: MpvDescription) -> None:
         """Initialize the control."""
-        super().__init__(device.comm)
-        self.device = device
-        self.comm = device.comm
+        super().__init__(device, info.name)
         self._key = key
-        self._name = info[0]
-        self._type = info[2]
+        self._type = info.kind
         if device.model == "AC-THOR 9s":
             self._attr_native_max_value = 9000
         elif device.model == "AC ELWA 2":
             self._attr_native_max_value = 3500
         else:
             self._attr_native_max_value = 3000
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return self._name
-
-    @property
-    def unique_id(self):
-        """Return unique id based on device serial and variable."""
-        return f"{self.device.serial_number}_{self._name}"
-
-    @property
-    def device_info(self):
-        """Return information about the device."""
-        return {
-            "identifiers": {(DOMAIN, self.device.serial_number)},
-            "name": self.device.name,
-            "manufacturer": "myPV",
-            "model": self.device.model,
-        }
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -79,17 +65,18 @@ class MpvPowerControl(CoordinatorEntity, NumberEntity):
 class MpvPidPowerControl(MpvPowerControl):
     """Representation of myPV pid power control."""
 
-    def __init__(self, device, key, info) -> None:
-        """Initialize the switch."""
+    def __init__(self, device: MpyDevice, key: str, info: MpvDescription) -> None:
+        """Initialize the control."""
         super().__init__(device, key, info)
-        self._name = "PID " + info[0]
+        self._attr_name = f"PID {info.name}"
+        self._attr_unique_id = f"{device.serial_number}_PID {info.name}"
         self._attr_native_min_value = -8388607
         self._attr_native_max_value = 8388607
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        if self.device.pid_power_set in [1, 2]:
+        if self.device.pid_power_set in (1, 2):
             # wait for update in power status
             self.device.pid_power_set += 1
         elif self.device.data[self._key] == 0:
@@ -106,55 +93,31 @@ class MpvPidPowerControl(MpvPowerControl):
         self.device.pid_power_set = 1
         http_control_mode = self.device.state_dict["Control State"] == "HTTP"
         while not http_control_mode:
-            await self.comm.set_pid_power(self.device, value)
+            await self.comm.set_pid_power(self.device, int(value))
             await asyncio.sleep(1)
             http_control_mode = self.device.state_dict["Control State"] == "HTTP"
-        await self.comm.set_pid_power(self.device, value)
+        await self.comm.set_pid_power(self.device, int(value))
 
 
-class MpvSetupControl(CoordinatorEntity, NumberEntity):
+class MpvSetupControl(MpvEntity, NumberEntity):
     """Representation of myPV setup value control."""
 
-    _attr_has_entity_name = True
     _attr_device_class = NumberDeviceClass.TEMPERATURE
     _attr_native_min_value = 40
     _attr_native_max_value = 80
     _attr_native_step = 1
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
 
-    def __init__(self, device, key, info) -> None:
+    def __init__(self, device: MpyDevice, key: str, info: MpvDescription) -> None:
         """Initialize the control."""
-        super().__init__(device.comm)
-        self.device = device
-        self.comm = device.comm
+        super().__init__(device, info.name)
         self._key = key
-        self._name = info[0]
-        self._type = info[2]
-        self._unit_of_measurement = UnitOfTemperature.CELSIUS
+        self._type = info.kind
 
     @property
-    def name(self):
-        """Return the name of the sensor."""
-        return self._name
-
-    @property
-    def unique_id(self):
-        """Return unique id based on device serial and variable."""
-        return f"{self.device.serial_number}_{self._name}"
-
-    @property
-    def device_info(self):
-        """Return information about the device."""
-        return {
-            "identifiers": {(DOMAIN, self.device.serial_number)},
-            "name": self.device.name,
-            "manufacturer": "myPV",
-            "model": self.device.model,
-        }
-
-    @property
-    def icon(self):
+    def icon(self) -> str:
         """Return icon."""
-        if self._name.startswith("Boost"):
+        if self._attr_name is not None and self._attr_name.startswith("Boost"):
             return "mdi:water-thermometer-outline"
         return "mdi:water-thermometer"
 
@@ -170,48 +133,20 @@ class MpvSetupControl(CoordinatorEntity, NumberEntity):
         await self.comm.set_number(self.device, self._key, int(value * 10))
 
 
-class MpvToutControl(CoordinatorEntity, NumberEntity):
-    """Representation of myPV setup value control."""
+class MpvToutControl(MpvEntity, NumberEntity):
+    """Representation of the control value timeout setting."""
 
-    _attr_has_entity_name = True
     _attr_device_class = NumberDeviceClass.DURATION
     _attr_native_min_value = 10
     _attr_native_max_value = 180
     _attr_native_step = 10
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+    _attr_icon = "mdi:camera-timer"
 
-    def __init__(self, device, key) -> None:
+    def __init__(self, device: MpyDevice, key: str) -> None:
         """Initialize the control."""
-        super().__init__(device.comm)
-        self.device = device
-        self.comm = device.comm
+        super().__init__(device, "Control Value Timeout")
         self._key = key
-        self._name = "Control Value Timeout"
-        self._unit_of_measurement = UnitOfTime.SECONDS
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return self._name
-
-    @property
-    def unique_id(self):
-        """Return unique id based on device serial and variable."""
-        return f"{self.device.serial_number}_{self._name}"
-
-    @property
-    def device_info(self):
-        """Return information about the device."""
-        return {
-            "identifiers": {(DOMAIN, self.device.serial_number)},
-            "name": self.device.name,
-            "manufacturer": "myPV",
-            "model": self.device.model,
-        }
-
-    @property
-    def icon(self):
-        """Return icon."""
-        return "mdi:camera-timer"
 
     @callback
     def _handle_coordinator_update(self) -> None:

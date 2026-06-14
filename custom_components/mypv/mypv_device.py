@@ -1,16 +1,20 @@
-"""myPV integration."""
+"""myPV device model."""
 
 import logging
+from typing import TYPE_CHECKING, Any
 
-import pytz
-
-from homeassistant.core import HomeAssistant
+from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.button import ButtonEntity
+from homeassistant.components.number import NumberEntity
+from homeassistant.components.select import SelectEntity
+from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.switch import SwitchEntity
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .binary_sensor import MpvBin1Sensor, MpvBin2Sensor, MpvBin3Sensor, MpvBinSensor
 from .button import MpvBoostButton, MpvBoostOffButton
-from .const import DOMAIN, SENSOR_TYPES, SETUP_TYPES
+from .const import DOMAIN, SENSOR_TYPES, SETUP_TYPES, MpvDescription
 from .number import MpvPidPowerControl, MpvPowerControl, MpvSetupControl, MpvToutControl
 from .select import MpvCtrlTypeSelect
 from .sensor import (
@@ -24,50 +28,60 @@ from .sensor import (
 )
 from .switch import MpvHttpSwitch, MpvSetupSwitch
 
+if TYPE_CHECKING:
+    from .communicate import MypvCommunicator
+
 _LOGGER = logging.getLogger(__name__)
 
+# data.jsn keys that never map to an entity.
+_IGNORED_DATA_KEYS = (
+    "device",
+    "fwversionlatest",
+    "psversionlatest",
+    "p9sversionlatest",
+    "fsetup",
+    "date",
+    "loctime",
+    "unixtime",
+    "wifi_list",
+    "freq",
+)
 
-class MpyDevice(CoordinatorEntity):
-    """Class definition of an myPV device."""
 
-    def __init__(self, comm, ip, info) -> None:
+class MpyDevice:
+    """Representation of a single myPV device behind the coordinator."""
+
+    def __init__(self, comm: MypvCommunicator, ip: str, info: dict[str, Any]) -> None:
         """Initialize the device."""
-        super().__init__(comm)
-        self._hass: HomeAssistant = comm.hass
-        self._entry = comm.config_entry
-        self._info = info
-        self._ip = ip
-        if "number" in info:
-            self._id = info["number"]
-        else:
-            self._id = info["sn"]
         self.comm = comm
+        self._hass = comm.hass
+        assert comm.config_entry is not None
+        self._entry = comm.config_entry
+        self._ip = ip
+        self._id = info.get("number", info["sn"])
         self.serial_number = info["sn"]
         self.fw = info["fwversion"]
         self.model = info["device"]
-        if "acthor9s" in info:
-            if info["acthor9s"] == 2:
-                self.model += " 9s"
+        if info.get("acthor9s") == 2:
+            self.model += " 9s"
         self._name = f"{self.model} {self._id}"
         self.state = 0
-        self.setup = []
-        self.data = []
-        self.sensors = []
-        self.binary_sensors = []
-        self.controls = []
-        self.buttons = []
-        self.switches = []
-        self.text_sensors = []
-        self.selects = []
-        self.state_dict = {}
-        self.max_power = 3600
-        self.pid_power = 0
+        self.setup: dict[str, Any] = {}
+        self.data: dict[str, Any] = {}
+        self.sensors: list[SensorEntity] = []
+        self.binary_sensors: list[BinarySensorEntity] = []
+        self.controls: list[NumberEntity] = []
+        self.buttons: list[ButtonEntity] = []
+        self.switches: list[SwitchEntity] = []
+        self.selects: list[SelectEntity] = []
+        self.energy_sensors: list[MpvEnergySensor] = []
+        self.state_dict: dict[str, str] = {}
+        self.pid_power: float = 0
         self.pid_power_set = 0
         self.logger = _LOGGER
         self.control_enabled = True
-        self.energy_sensors = []
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Get setup information, find sensors."""
         self.setup = await self.comm.setup_update(self)
         self.data = await self.comm.data_update(self)
@@ -84,56 +98,33 @@ class MpyDevice(CoordinatorEntity):
         await self.init_entities()
 
     @property
-    def unique_id(self):
-        """Return unique id based on device serial."""
-        return self.serial_number
-
-    @property
-    def name(self):
+    def name(self) -> str:
         """Return the name of the device."""
         return self._name
 
     @property
-    def ip(self):
+    def ip(self) -> str:
         """Return the ip address of the device."""
         return self._ip
 
-    async def init_entities(self):
+    async def init_entities(self) -> None:
         """Take sensors from data and init HA sensors."""
+        tz = await dt_util.async_get_time_zone(self.comm.hass.config.time_zone)
+        data_keys = [key for key in self.data if key not in _IGNORED_DATA_KEYS]
 
-        def remove_data_key(key):
-            """Safely remove key from data_keys."""
-            if key in data_keys:
-                data_keys.remove(key)
-
-        ha_timezone_str = self.comm.hass.config.time_zone
-        tz = await self.comm.hass.async_add_executor_job(pytz.timezone, ha_timezone_str)
-        data_keys = list(self.data.keys())  # type: ignore  # noqa: PGH003
-        defined_data_keys = list(SENSOR_TYPES.keys())  # type: ignore  # noqa: PGH003
-        setup_keys = list(self.setup.keys())  # type: ignore  # noqa: PGH003
-        defined_setup_keys = list(SETUP_TYPES.keys())
-        remove_data_key("device")
-        remove_data_key("device")
-        remove_data_key("fwversionlatest")
-        remove_data_key("psversionlatest")
-        remove_data_key("p9sversionlatest")
-        remove_data_key("fsetup")
-        remove_data_key("date")
-        remove_data_key("loctime")
-        remove_data_key("unixtime")
-        remove_data_key("wifi_list")
-        remove_data_key("freq")
         if self.model != "Solthor":
             self.sensors.append(
                 MpvDevStatSensor(
-                    self, "control_state", ["Control state", None, "sensor"]
+                    self,
+                    "control_state",
+                    MpvDescription("Control state", None, "sensor"),
                 )
             )
-        for key in defined_data_keys:
+        for key, desc in SENSOR_TYPES.items():
             # use only keys included in data with valid values
             if (
-                SENSOR_TYPES[key][2]
-                in [
+                desc.kind
+                in (
                     "binary_sensor",
                     "sensor",
                     "version",
@@ -144,93 +135,67 @@ class MpyDevice(CoordinatorEntity):
                     "switch",
                     "control",
                     "text",
-                ]
+                )
                 and key in data_keys
-                and self.data[key] is not None  # type: ignore  # noqa: PGH003
-                and self.data[key] != "null"  # type: ignore  # noqa: PGH003
+                and self.data[key] is not None
+                and self.data[key] != "null"
             ):
-                self.logger.info(f"Sensor Key: {key}: {self.data[key]}")  # type: ignore  # noqa: G004, PGH003
-                if SENSOR_TYPES[key][2] in ["sensor", "text", "ip_string", "version"]:
-                    self.sensors.append(MpvSensor(self, key, SENSOR_TYPES[key]))
-                elif SENSOR_TYPES[key][2] in ["dev_stat"]:
-                    self.sensors.append(MpvDevStatSensor(self, key, SENSOR_TYPES[key]))
-                elif SENSOR_TYPES[key][2] in ["upd_stat"]:
-                    self.sensors.append(MpvUpdateSensor(self, key, SENSOR_TYPES[key]))
-                elif SENSOR_TYPES[key][2] in ["binary_sensor"]:
-                    if self.model == "AC-THOR 9s" and SENSOR_TYPES[key][0] == "Relais":
-                        sensor_type: list[str] = SENSOR_TYPES[key]
+                self.logger.debug("Sensor Key: %s: %s", key, self.data[key])
+                if desc.kind in ("sensor", "text", "ip_string", "version"):
+                    self.sensors.append(MpvSensor(self, key, desc))
+                elif desc.kind == "dev_stat":
+                    self.sensors.append(MpvDevStatSensor(self, key, desc))
+                elif desc.kind == "upd_stat":
+                    self.sensors.append(MpvUpdateSensor(self, key, desc))
+                elif desc.kind == "binary_sensor":
+                    if self.model == "AC-THOR 9s" and desc.name == "Relais":
+                        self.binary_sensors.append(MpvBin1Sensor(self, key, desc))
                         self.binary_sensors.append(
-                            MpvBin1Sensor(self, key, sensor_type)
+                            MpvBin2Sensor(self, key, desc._replace(name="Out 3"))
                         )
-                        sensor_type[0] = "Out 3"
                         self.binary_sensors.append(
-                            MpvBin2Sensor(self, key, sensor_type)
+                            MpvBin3Sensor(self, key, desc._replace(name="Out 2"))
                         )
-                        sensor_type[0] = "Out 2"
-                        self.binary_sensors.append(
-                            MpvBin3Sensor(self, key, sensor_type)
+                        self.sensors.append(
+                            MpvOutStatSensor(
+                                self, key, desc._replace(name="Output status")
+                            )
                         )
-                        sensor_type[0] = "Output status"
-                        self.sensors.append(MpvOutStatSensor(self, key, sensor_type))
                     else:
-                        self.binary_sensors.append(
-                            MpvBinSensor(self, key, SENSOR_TYPES[key])
-                        )
-                elif SENSOR_TYPES[key][2] in ["button"] and self.control_enabled:
-                    self.buttons.append(MpvBoostButton(self, key, SENSOR_TYPES[key]))
+                        self.binary_sensors.append(MpvBinSensor(self, key, desc))
+                elif desc.kind == "button" and self.control_enabled:
+                    self.buttons.append(MpvBoostButton(self, key, desc))
                     self.buttons.append(
                         MpvBoostOffButton(self, key + "off", SENSOR_TYPES[key + "off"])
                     )
-                elif SENSOR_TYPES[key][2] in ["control"]:
+                elif desc.kind == "control":
                     if self.control_enabled:
-                        self.controls.append(
-                            MpvPowerControl(self, key, SENSOR_TYPES[key])
-                        )
-                        self.controls.append(
-                            MpvPidPowerControl(self, key, SENSOR_TYPES[key])
-                        )
+                        self.controls.append(MpvPowerControl(self, key, desc))
+                        self.controls.append(MpvPidPowerControl(self, key, desc))
                     # Setup as sensor, too
-                    self.sensors.append(
-                        MpvSensor(self, key, SENSOR_TYPES[key])
-                    )  # power
-                    self.sensors.append(
-                        MpvEnergySensor(
+                    self.sensors.append(MpvSensor(self, key, desc))  # power
+                    for prefix, energy_cls in (
+                        ("int", MpvEnergySensor),
+                        ("intm", MpvEnergyMonthlySensor),
+                        ("intd", MpvEnergyDailySensor),
+                    ):
+                        energy = energy_cls(
                             self,
-                            f"int_{key}",
-                            SENSOR_TYPES[f"int_{key}"],
-                            SENSOR_TYPES[key],
+                            f"{prefix}_{key}",
+                            SENSOR_TYPES[f"{prefix}_{key}"],
+                            desc,
                             tz,
                         )
-                    )  # energy
-                    self.energy_sensors.append(self.sensors[-1])
-                    self.sensors.append(
-                        MpvEnergyMonthlySensor(
-                            self,
-                            f"intm_{key}",
-                            SENSOR_TYPES[f"intm_{key}"],
-                            SENSOR_TYPES[key],
-                            tz,
-                        )
-                    )  # energy daily
-                    self.energy_sensors.append(self.sensors[-1])
-                    self.sensors.append(
-                        MpvEnergyDailySensor(
-                            self,
-                            f"intd_{key}",
-                            SENSOR_TYPES[f"intd_{key}"],
-                            SENSOR_TYPES[key],
-                            tz,
-                        )
-                    )  # energy daily
-                    self.energy_sensors.append(self.sensors[-1])
-            if SENSOR_TYPES[key][2] in ["sensor_always"]:
-                # Sensor value might not be available at statrtup
-                self.sensors.append(MpvSensor(self, key, SENSOR_TYPES[key]))
-        for key in defined_setup_keys:
+                        self.sensors.append(energy)
+                        self.energy_sensors.append(energy)
+            if desc.kind == "sensor_always":
+                # Sensor value might not be available at startup
+                self.sensors.append(MpvSensor(self, key, desc))
+        for key, desc in SETUP_TYPES.items():
             # use only keys included in setup with valid values
             if (
-                SETUP_TYPES[key][2]
-                in [
+                desc.kind
+                in (
                     "binary_sensor",
                     "button",
                     "ctrl_type",
@@ -238,42 +203,35 @@ class MpyDevice(CoordinatorEntity):
                     "sensor",
                     "switch",
                     "control",
-                ]
-                and key in setup_keys
-                and self.setup[key] is not None  # type: ignore  # noqa: PGH003
-                and self.setup[key] != "null"  # type: ignore  # noqa: PGH003
+                )
+                and key in self.setup
+                and self.setup[key] is not None
+                and self.setup[key] != "null"
             ):
-                self.logger.info(f"Setup Key: {key}: {self.setup[key]}")  # type: ignore  # noqa: G004, PGH003
-                if SETUP_TYPES[key][2] in ["sensor", "text", "ip_string"]:
-                    self.sensors.append(MpvSensor(self, key, SETUP_TYPES[key]))
-                elif SETUP_TYPES[key][2] in ["ctrl_type"]:
-                    self.logger.info(f"Creating select entity for {key}")  # type: ignore  # noqa: G004
-                    self.selects.append(MpvCtrlTypeSelect(self, key, SETUP_TYPES[key]))
-                elif SETUP_TYPES[key][2] in ["binary_sensor"]:
-                    self.binary_sensors.append(
-                        MpvBinSensor(self, key, SETUP_TYPES[key])
-                    )
-                elif SETUP_TYPES[key][2] in ["switch"]:
-                    self.switches.append(MpvSetupSwitch(self, key, SETUP_TYPES[key]))
-                elif SETUP_TYPES[key][2] in ["number"]:
-                    self.controls.append(MpvSetupControl(self, key, SETUP_TYPES[key]))
+                self.logger.debug("Setup Key: %s: %s", key, self.setup[key])
+                if desc.kind in ("sensor", "text", "ip_string"):
+                    self.sensors.append(MpvSensor(self, key, desc))
+                elif desc.kind == "ctrl_type":
+                    self.logger.debug("Creating select entity for %s", key)
+                    self.selects.append(MpvCtrlTypeSelect(self, key, desc))
+                elif desc.kind == "binary_sensor":
+                    self.binary_sensors.append(MpvBinSensor(self, key, desc))
+                elif desc.kind == "switch":
+                    self.switches.append(MpvSetupSwitch(self, key, desc))
+                elif desc.kind == "number":
+                    self.controls.append(MpvSetupControl(self, key, desc))
         if self.model != "Solthor":
             self.switches.append(MpvHttpSwitch(self, "ctrl"))
             self.controls.append(MpvToutControl(self, "tout"))
 
-    async def update(self):
+    async def update(self) -> None:
         """Update all sensors."""
         for en_sensor in self.energy_sensors:
-            await en_sensor.async_update()  # type: ignore  # noqa: PGH003
-        resp = await self.comm.data_update(self)
-        if resp:
-            self.data = resp
-        resp = await self.comm.setup_update(self)
-        if resp:
-            self.setup = resp
-        if self.control_enabled:
-            if await self.comm.state_update(self):
-                if "State" in self.state_dict:
-                    self.state = int(self.state_dict["State"])
-                else:
-                    self.state = -1
+            await en_sensor.async_update()
+        self.data = await self.comm.data_update(self)
+        self.setup = await self.comm.setup_update(self)
+        if self.control_enabled and await self.comm.state_update(self):
+            if "State" in self.state_dict:
+                self.state = int(self.state_dict["State"])
+            else:
+                self.state = -1

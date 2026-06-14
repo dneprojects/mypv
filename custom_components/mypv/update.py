@@ -1,12 +1,18 @@
 """Update entities of myPV integration."""
 
 import logging
+from typing import TYPE_CHECKING
 
 from homeassistant.components.update import UpdateEntity
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import COMM_HUB, DOMAIN
+from .entity import MpvEntity
+
+if TYPE_CHECKING:
+    from .mypv_device import MpyDevice
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,7 +37,11 @@ _IN_PROGRESS_STATES = (2, 3, 4, 10)
 _IN_PROGRESS_STATES_SOLTHOR = (3, 4, 5, 7)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
     """Add a firmware update entity for each reported firmware part."""
     comm = hass.data[DOMAIN][entry.entry_id][COMM_HUB]
     entities = [
@@ -44,62 +54,32 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
         async_add_entities(entities)
 
 
-class MpvFwUpdate(CoordinatorEntity, UpdateEntity):
+class MpvFwUpdate(MpvEntity, UpdateEntity):
     """Report-only firmware update entity for a myPV device part."""
-
-    _attr_has_entity_name = True
-    _attr_should_poll = True
 
     def __init__(
         self,
-        device,
+        device: MpyDevice,
         name: str,
         installed_key: str,
         latest_key: str,
         state_key: str,
     ) -> None:
         """Initialize the firmware update entity."""
-        super().__init__(device.comm)
-        self.device = device
-        self.comm = device.comm
-        self._name = name
+        super().__init__(device, name)
+        self._attr_title = name
         self._installed_key = installed_key
         self._latest_key = latest_key
         self._state_key = state_key
 
     @property
-    def name(self):
-        """Return the name of the update entity."""
-        return self._name
-
-    @property
-    def title(self):
-        """Return the firmware part title."""
-        return self._name
-
-    @property
-    def unique_id(self):
-        """Return unique id based on device serial and firmware part."""
-        return f"{self.device.serial_number}_{self._name}"
-
-    @property
-    def device_info(self):
-        """Return information about the device."""
-        return {
-            "identifiers": {(DOMAIN, self.device.serial_number)},
-            "name": self.device.name,
-            "manufacturer": "myPV",
-            "model": self.device.model,
-        }
-
-    @property
-    def installed_version(self):
+    def installed_version(self) -> str | None:
         """Return the currently installed firmware version."""
         version = self.device.data.get(self._installed_key)
         return str(version) if version not in (None, "null") else None
 
     @property
-    def latest_version(self):
+    def latest_version(self) -> str | None:
         """Return the latest available firmware version."""
         version = self.device.data.get(self._latest_key)
         if version in (None, "null", ""):
@@ -107,7 +87,7 @@ class MpvFwUpdate(CoordinatorEntity, UpdateEntity):
         return str(version)
 
     @property
-    def in_progress(self):
+    def in_progress(self) -> bool:
         """Return whether the device is downloading or installing firmware."""
         states = (
             _IN_PROGRESS_STATES_SOLTHOR
@@ -116,10 +96,10 @@ class MpvFwUpdate(CoordinatorEntity, UpdateEntity):
         )
         try:
             return int(self.device.data[self._state_key]) in states
-        except (KeyError, TypeError, ValueError):
+        except KeyError, TypeError, ValueError:
             return False
 
     @callback
-    def _handle_coordinator_update(self):
+    def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         self.async_write_ha_state()

@@ -1,5 +1,4 @@
 """Config flow for ELWA myPV integration."""
-# import logging
 
 import json
 from json import JSONDecodeError
@@ -10,8 +9,8 @@ from requests.exceptions import ConnectTimeout, HTTPError
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.components import dhcp
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 
 from .const import (
     CONF_DEFAULT_INTERVAL,
@@ -26,13 +25,14 @@ from .discovery import async_discover_mypv_devices
 
 
 @callback
-def mypv_entries(hass: HomeAssistant):
+def mypv_entries(hass: HomeAssistant) -> list[str]:
     """Return the hosts for the domain."""
     try:
-        return hass.config_entries.async_entries(DOMAIN)[0].data[CONF_HOSTS]
-    except:  # noqa: E722
+        hosts: list[str] = hass.config_entries.async_entries(DOMAIN)[0].data[CONF_HOSTS]
+    except IndexError, KeyError:
         # Return empty list on failure
         return []
+    return hosts
 
 
 class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -41,7 +41,7 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
     CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
-    @staticmethod  # type: ignore  # noqa: PGH003
+    @staticmethod
     @callback
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
@@ -51,13 +51,12 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         """Initialize the config flow."""
-        self._errors = {}
-        self._info = {}
+        self._errors: dict[str, str] = {}
         self._discovered_devices: dict[str, str] = {}
         self._discovery_ip: str | None = None
         self._discovery_name: str | None = None
 
-    def _all_hosts_in_configuration_exist(self, ip_list) -> bool:
+    def _all_hosts_in_configuration_exist(self, ip_list: list[str]) -> bool:
         """Return True if all hosts found already exist in configuration."""
         return all(ip in mypv_entries(self.hass) for ip in ip_list)
 
@@ -80,12 +79,12 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return len(host_list) > 0, host_list, device_name
 
     async def async_step_dhcp(
-        self, discovery_info: dhcp.DhcpServiceInfo
+        self, discovery_info: DhcpServiceInfo
     ) -> config_entries.ConfigFlowResult:
         """Handle discovery via dhcp."""
         dev_ip = discovery_info.ip
 
-        can_connect, ips_found, fetched_name = await self.hass.async_add_executor_job(
+        can_connect, _ips_found, fetched_name = await self.hass.async_add_executor_job(
             self._check_host, dev_ip
         )
 
@@ -108,7 +107,7 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         dev_ip = discovery_info["ip"]
         dev_host = discovery_info.get("host", "myPV")
 
-        can_connect, ips_found, fetched_name = await self.hass.async_add_executor_job(
+        can_connect, _ips_found, fetched_name = await self.hass.async_add_executor_job(
             self._check_host, dev_ip
         )
         if not can_connect:
@@ -126,12 +125,13 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return await self.async_step_confirm()
 
     async def async_step_confirm(
-        self, user_input=None
+        self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         """Confirm setup of a discovered device (no input needed)."""
 
         if user_input is not None:
             update_interval = CONF_DEFAULT_INTERVAL
+            assert self._discovery_ip is not None
 
             can_connect, ips_found, _ = await self.hass.async_add_executor_job(
                 self._check_host, self._discovery_ip
@@ -161,13 +161,15 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="confirm",
             data_schema=setup_schema,
             description_placeholders={
-                "name": self._discovery_name,
-                "ip": self._discovery_ip,
+                "name": self._discovery_name or "",
+                "ip": self._discovery_ip or "",
             },
             errors=self._errors,
         )
 
-    async def async_step_user(self, user_input=None) -> config_entries.ConfigFlowResult:
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
         """Handle the manual addition step (with IP dropdown)."""
 
         if not self._discovered_devices and user_input is None:
@@ -286,7 +288,7 @@ class MpvOptionsFlow(config_entries.OptionsFlow):
 
     def __init__(self) -> None:
         """Initialize options flow."""
-        self._errors = {}
+        self._errors: dict[str, str] = {}
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -321,7 +323,6 @@ class MpvOptionsFlow(config_entries.OptionsFlow):
             current_interval = (
                 int(raw_interval) if raw_interval is not None else CONF_DEFAULT_INTERVAL
             )
-        # FIXED: Added parentheses for multiple exceptions in Python 3
         except ValueError, TypeError:
             current_interval = CONF_DEFAULT_INTERVAL
 

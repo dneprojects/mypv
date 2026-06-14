@@ -1,20 +1,27 @@
 """Buttons of myPV integration."""
 
 import logging
+from typing import TYPE_CHECKING
 
-from homeassistant.components.button import ButtonDeviceClass, ButtonEntity
+from homeassistant.components.button import ButtonEntity
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import COMM_HUB, DOMAIN
+from .const import COMM_HUB, DOMAIN, MpvDescription
+from .entity import MpvEntity
+
+if TYPE_CHECKING:
+    from .mypv_device import MpyDevice
 
 _LOGGER = logging.getLogger(__name__)
 
-PID_POWER_ON_VALUE = 3000
-PID_POWER_OFF_VALUE = 0
 
-
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
     """Add all myPV button entities."""
     comm = hass.data[DOMAIN][entry.entry_id][COMM_HUB]
 
@@ -22,42 +29,16 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
         async_add_entities(device.buttons)
 
 
-class MpvBoostButton(CoordinatorEntity, ButtonEntity):
+class MpvBoostButton(MpvEntity, ButtonEntity):
     """Representation of myPV button."""
 
-    def __init__(self, device, key, info) -> None:
+    _attr_icon = "mdi:heat-wave"
+
+    def __init__(self, device: MpyDevice, key: str, info: MpvDescription) -> None:
         """Initialize the button."""
-        super().__init__(device.comm)
-        self.device = device
-        self.comm = device.comm
+        super().__init__(device, info.name)
         self._key = key
-        self._name = info[0]
-        self._type = info[2]
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return self._name
-
-    @property
-    def unique_id(self):
-        """Return unique id based on device serial and variable."""
-        return f"{self.device.serial_number}_{self._name}"
-
-    @property
-    def device_info(self):
-        """Return information about the device."""
-        return {
-            "identifiers": {(DOMAIN, self.device.serial_number)},
-            "name": self.device.name,
-            "manufacturer": "myPV",
-            "model": self.device.model,
-        }
-
-    @property
-    def icon(self):
-        """Return icon."""
-        return "mdi:heat-wave"
+        self._type = info.kind
 
     async def async_press(self) -> None:
         """Instruct the button to activate."""

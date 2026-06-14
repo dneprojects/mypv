@@ -1,20 +1,19 @@
 """Sensors of myPV integration."""
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 import logging
-from typing import Any
-
-import pytz
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.integration.sensor import IntegrationSensor, UnitOfTime
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
-    datetime,
 )
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
+    EntityCategory,
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
     UnitOfEnergy,
@@ -24,16 +23,36 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.entity import EntityCategory
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import slugify
 
-from .const import COMM_HUB, DOMAIN
+from .const import COMM_HUB, DOMAIN, MpvDescription
+from .entity import MpvEntity
+
+if TYPE_CHECKING:
+    from .mypv_device import MpyDevice
 
 _LOGGER = logging.getLogger(__name__)
 
+# Map a unit of measurement to the matching sensor device class.
+_DEVICE_CLASS_BY_UNIT: dict[str, SensorDeviceClass] = {
+    UnitOfTemperature.CELSIUS: SensorDeviceClass.TEMPERATURE,
+    UnitOfElectricCurrent.AMPERE: SensorDeviceClass.CURRENT,
+    UnitOfElectricPotential.VOLT: SensorDeviceClass.VOLTAGE,
+    UnitOfPower.WATT: SensorDeviceClass.POWER,
+    UnitOfEnergy.KILO_WATT_HOUR: SensorDeviceClass.ENERGY,
+    UnitOfFrequency.HERTZ: SensorDeviceClass.FREQUENCY,
+}
 
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
+# Kinds whose value is textual and therefore must not carry a state class.
+_TEXT_KINDS = ("text", "ip_string", "version")
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
     """Add all myPV sensor entities."""
     comm = hass.data[DOMAIN][entry.entry_id][COMM_HUB]
 
@@ -41,127 +60,72 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
         async_add_entities(device.sensors)
 
 
-class MpvSensor(CoordinatorEntity, SensorEntity):
+class MpvSensor(MpvEntity, SensorEntity):
     """Representation of myPV sensors."""
 
-    _attr_has_entity_name = True
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_should_poll = True
+    _attr_state_class: SensorStateClass | None = SensorStateClass.MEASUREMENT
 
-    def __init__(self, device, key: str, info: list[Any]) -> None:
+    def __init__(self, device: MpyDevice, key: str, info: MpvDescription) -> None:
         """Initialize the sensor."""
-        super().__init__(device.comm)
-        self.device = device
-        self.comm = device.comm
-        self.hass = device.comm.hass
+        super().__init__(device, info.name)
         self._key = key
-        self._name = info[0]
-        self._unit_of_measurement = info[1]
-        self._type = info[2]
-        self._last_value = None
-        if key.split("_")[0] in ["power1", "power2", "power3"]:
+        self._unit = info.unit
+        self._type = info.kind
+        self._last_value: Any = None
+        self._attr_native_unit_of_measurement = info.unit
+        self._attr_device_class = (
+            _DEVICE_CLASS_BY_UNIT.get(info.unit) if info.unit else None
+        )
+        if info.kind in _TEXT_KINDS:
+            self._attr_state_class = None
+        if key.split("_", maxsplit=1)[0] in ("power1", "power2", "power3"):
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
-            self._attr_entity_registry_enabled_default = (
-                False  # Entity will initally be disabled
-            )
+            # Entity will initially be disabled
+            self._attr_entity_registry_enabled_default = False
 
     @property
-    def name(self):
-        """Return the name of the sensor."""
-        return self._name
-
-    @property
-    def state(self):
-        """Return the state of the device."""
-        return self._last_value
-
-    @property
-    def unit_of_measurement(self):
-        """Return the unit of measurement this sensor expresses itself in."""
-        return self._unit_of_measurement
-
-    @property
-    def device_class(self):
-        """Return device class of sensor."""
-        if self._unit_of_measurement == UnitOfTemperature.CELSIUS:
-            return SensorDeviceClass.TEMPERATURE
-        if self._unit_of_measurement == UnitOfElectricCurrent.AMPERE:
-            return SensorDeviceClass.CURRENT
-        if self._unit_of_measurement == UnitOfElectricPotential.VOLT:
-            return SensorDeviceClass.VOLTAGE
-        if self._unit_of_measurement == UnitOfPower.WATT:
-            return SensorDeviceClass.POWER
-        if self._unit_of_measurement == UnitOfEnergy.KILO_WATT_HOUR:
-            return SensorDeviceClass.ENERGY
-        if self._unit_of_measurement == UnitOfFrequency.HERTZ:
-            return SensorDeviceClass.FREQUENCY
-        return SensorDeviceClass.ENUM
-
-    @property
-    def state_class(self):
-        """Return device state class of sensor."""
-        return SensorStateClass.MEASUREMENT
-
-    @property
-    def icon(self):
+    def icon(self) -> str | None:
         """Return icon."""
-        if self._name in ["IP", "DNS", "Gateway", "Subnet mask"]:
+        name = self._attr_name or ""
+        if name in ("IP", "DNS", "Gateway", "Subnet mask"):
             return "mdi:ip-network"
-        if self._name.split()[-1] == "Version":
+        if name.split()[-1:] == ["Version"]:
             return "mdi:numeric"
-        if self._name.split()[-1] == "Surplus":
+        if name.split()[-1:] == ["Surplus"]:
             return "mdi:octagram-plus-outline"
-        if self._name in ["Screen mode", "Power supply state"]:
+        if name in ("Screen mode", "Power supply state"):
             return "mdi:state-machine"
-        if self._name in ["Fan speed"]:
+        if name == "Fan speed":
             return "mdi:fan"
         return None
 
-    @property
-    def unique_id(self):
-        """Return unique id based on device serial and variable."""
-        return f"{self.device.serial_number}_{self._name}"
-
-    @property
-    def device_info(self):
-        """Return information about the device."""
-        return {
-            "identifiers": {(DOMAIN, self.device.serial_number)},
-            "name": self.device.name,
-            "manufacturer": "myPV",
-            "model": self.device.model,
-        }
-
     @callback
-    def _handle_coordinator_update(self):
+    def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         try:
             state = self.device.data[self._key]
-            if self._type == "power_act":
-                relOut = int(self.comm.data["rel1_out"])
-                loadNom = int(self.comm.data["load_nom"])
-                state = (relOut * loadNom) + int(state)
-        except Exception:  # noqa: BLE001
+        except KeyError, TypeError:
             state = self._last_value
         if state is None:
-            return state
-        if self._unit_of_measurement == UnitOfFrequency.HERTZ:
+            return
+        if self._unit == UnitOfFrequency.HERTZ:
             state = state / 1000
-        if self._unit_of_measurement == UnitOfTemperature.CELSIUS:
+        if self._unit == UnitOfTemperature.CELSIUS:
             state = state / 10
-        if self._unit_of_measurement == UnitOfElectricCurrent.AMPERE:
+        if self._unit == UnitOfElectricCurrent.AMPERE:
             state = state / 10
         self._last_value = state
         self._attr_native_value = state
         self.async_write_ha_state()
-        return None
 
 
 class MpvOutStatSensor(MpvSensor):
     """Return output state from last digit for AC-Thor 9s."""
 
+    _attr_icon = "mdi:format-list-numbered"
+
     @callback
-    def _handle_coordinator_update(self):
+    def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         value = self.device.data[self._key]
         if isinstance(value, int):
@@ -171,21 +135,14 @@ class MpvOutStatSensor(MpvSensor):
         else:
             _LOGGER.warning("Unexpected type for output status sensor value: %r", value)
             str_number = "0000"
-        state = int(str_number[-1])  # Get the last digit
-        self._last_value = state
-        self._attr_native_value = state
+        self._attr_native_value = int(str_number[-1])  # Get the last digit
         self.async_write_ha_state()
-
-    @property
-    def icon(self):
-        """Return icon."""
-        return "mdi:format-list-numbered"
 
 
 class MpvUpdateSensor(MpvSensor):
-    """Return update state from enum."""
+    """Return firmware update state as an enum sensor."""
 
-    def __init__(self, device, key, info) -> None:
+    def __init__(self, device: MpyDevice, key: str, info: MpvDescription) -> None:
         """Initialize the sensor."""
         super().__init__(device, key, info)
         self._last_value = 0
@@ -210,11 +167,14 @@ class MpvUpdateSensor(MpvSensor):
                 5: "Download interrupted",
                 10: "Download finished, waiting for installation",
             }
+        self._attr_device_class = SensorDeviceClass.ENUM
+        self._attr_state_class = None
+        self._attr_options = list(self._enum.values())
 
     @property
-    def icon(self):
+    def icon(self) -> str:
         """Return icon."""
-        match self._enum[self._last_value]:
+        match self._enum.get(self._last_value):
             case "No new fw available":
                 return "mdi:clock-check-outline"
             case "New fw available":
@@ -227,21 +187,23 @@ class MpvUpdateSensor(MpvSensor):
                 return "mdi:download"
 
     @property
-    def state(self):
+    def native_value(self) -> str | None:
         """Return the state of the device."""
+        value = self.device.data.get(self._key)
+        if value is not None:
+            self._last_value = value
+        return self._enum.get(self._last_value)
 
-        try:
-            state = self.device.data[self._key]
-            self._last_value = state
-        except Exception:  # noqa: BLE001
-            state = self._last_value
-        return self._enum[state]
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self.async_write_ha_state()
 
 
 class MpvDevStatSensor(MpvSensor):
-    """Return device state from enum."""
+    """Return device state as an enum sensor."""
 
-    def __init__(self, device, key, info) -> None:
+    def __init__(self, device: MpyDevice, key: str, info: MpvDescription) -> None:
         """Initialize the sensor."""
         super().__init__(device, key, info)
         self._last_value = 1
@@ -276,9 +238,12 @@ class MpvDevStatSensor(MpvSensor):
                 205: "ELWA Temp Sensor fault",
                 209: "Mainboard Error",
             }
+        self._attr_device_class = SensorDeviceClass.ENUM
+        self._attr_state_class = None
+        self._attr_options = list(self._enum.values())
 
     @property
-    def icon(self):
+    def icon(self) -> str:
         """Return icon."""
         if self._last_value == 1:
             return "mdi:water-boiler-off"
@@ -291,35 +256,44 @@ class MpvDevStatSensor(MpvSensor):
         return "mdi:water-boiler"
 
     @property
-    def state(self):
+    def native_value(self) -> str | None:
         """Return the state of the device."""
+        if self.device.state is not None:
+            self._last_value = self.device.state + 1
+        return self._enum.get(self._last_value)
 
-        try:
-            state = self.device.state
-            self._last_value = state + 1
-        except Exception:  # noqa: BLE001
-            pass
-        return self._enum[self._last_value]
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self.async_write_ha_state()
 
 
 class MpvEnergySensor(IntegrationSensor, MpvSensor):
     """Return energy state by integrating power consumption."""
 
-    _attr_has_entity_name = True
-    _attr_should_poll = True
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_icon = "mdi:meter-electric"
 
-    def __init__(self, device, key, info, source, tz) -> None:
+    def __init__(
+        self,
+        device: MpyDevice,
+        key: str,
+        info: MpvDescription,
+        source: MpvDescription,
+        tz: Any,
+    ) -> None:
         """Initialize the sensor."""
-        self._last_value = 0
-        self._last_reset = None
+        self._last_value: float = 0
+        self._last_reset: datetime | None = None
+        self.name_by_user: str | None = None
         # Get name_by_user from device registry if available
         devreg = dr.async_get(device.comm.hass)
         for dev_id in devreg.devices.data:
             dev = devreg.devices.get(dev_id)
-            if dev is not None:
-                if (DOMAIN, device.serial_number) in dev.identifiers:
-                    self.name_by_user = dev.name_by_user
-                    break
+            if dev is not None and (DOMAIN, device.serial_number) in dev.identifiers:
+                self.name_by_user = dev.name_by_user
+                break
         if not self.name_by_user:
             self.name_by_user = device.name
         self.ha_timezone = tz
@@ -328,48 +302,28 @@ class MpvEnergySensor(IntegrationSensor, MpvSensor):
         IntegrationSensor.__init__(
             self,
             device.comm.hass,
-            source_entity=f"sensor.{slugify(self.name_by_user + '_' + source[0])}",
-            name=info[0],
+            source_entity=f"sensor.{slugify(self.name_by_user + '_' + source.name)}",
+            name=info.name,
             round_digits=1,
             integration_method="trapezoidal",
             unit_prefix="k",
             unit_time=UnitOfTime.HOURS,
-            unique_id=f"{device.serial_number}_{info[0]}",
+            unique_id=f"{device.serial_number}_{info.name}",
             max_sub_interval=timedelta(seconds=10),
         )
         MpvSensor.__init__(self, device, key, info)
 
     @property
-    def icon(self):
-        """Return icon."""
-        return "mdi:meter-electric"
-
-    @property
-    def state_class(self):
-        """Return device state class of sensor."""
-        return SensorStateClass.TOTAL
-
-    @property
-    def device_class(self):
-        """Return device class of sensor."""
-        return SensorDeviceClass.ENERGY
-
-    @property
-    def state(self):
+    def native_value(self) -> Decimal:
         """Return the state of the device."""
         return Decimal(self._last_value)
 
     @property
-    def last_reset(self):
+    def last_reset(self) -> datetime | None:
         """Return last reset of sensor."""
         return self._last_reset
 
-    @property
-    def unique_id(self):
-        """Return unique id based on device serial and variable."""
-        return f"{self.device.serial_number}_{self._name}"
-
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Update the sensor state."""
         await self.async_get_last_sensor_data()
         if self._state is None:
@@ -386,22 +340,32 @@ class MpvEnergySensor(IntegrationSensor, MpvSensor):
         """Reset the sensor's state."""
         _LOGGER.info("Resetting energy sensor %s", self.entity_id)
         self._state = Decimal("0.0")
-        self._last_reset = datetime.now(pytz.utc)
+        self._last_reset = datetime.now(UTC)
         self.async_write_ha_state()
 
 
 class MpvEnergyDailySensor(MpvEnergySensor):
-    """Return energy state by integrating power consumption."""
+    """Return energy state by integrating power consumption, reset daily."""
 
-    def __init__(self, device, key, info, source, tz) -> None:
+    def __init__(
+        self,
+        device: MpyDevice,
+        key: str,
+        info: MpvDescription,
+        source: MpvDescription,
+        tz: Any,
+    ) -> None:
         """Initialize the sensor."""
         super().__init__(device, key, info, source, tz)
         self._last_reset = datetime.now(self.ha_timezone)
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Update the sensor state."""
         await self.async_get_last_sensor_data()
-        if datetime.now(self.ha_timezone).date() != self._last_reset.date():
+        if (
+            self._last_reset is None
+            or datetime.now(self.ha_timezone).date() != self._last_reset.date()
+        ):
             await self.async_reset()
         if self._state is None:
             self._state = Decimal("0.0")
@@ -415,17 +379,27 @@ class MpvEnergyDailySensor(MpvEnergySensor):
 
 
 class MpvEnergyMonthlySensor(MpvEnergySensor):
-    """Return energy state by integrating power consumption."""
+    """Return energy state by integrating power consumption, reset monthly."""
 
-    def __init__(self, device, key, info, source, tz) -> None:
+    def __init__(
+        self,
+        device: MpyDevice,
+        key: str,
+        info: MpvDescription,
+        source: MpvDescription,
+        tz: Any,
+    ) -> None:
         """Initialize the sensor."""
         super().__init__(device, key, info, source, tz)
         self._last_reset = datetime.now(self.ha_timezone)
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Update the sensor state."""
         await self.async_get_last_sensor_data()
-        if datetime.now(self.ha_timezone).month != self._last_reset.month:
+        if (
+            self._last_reset is None
+            or datetime.now(self.ha_timezone).month != self._last_reset.month
+        ):
             await self.async_reset()
         if self._state is None:
             self._state = Decimal("0.0")
