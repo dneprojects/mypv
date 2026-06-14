@@ -9,6 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import slugify
 
 from .const import COMM_HUB, DOMAIN, MpvDescription
 from .entity import MpvEntity
@@ -68,7 +69,8 @@ class MpvPidPowerControl(MpvPowerControl):
     def __init__(self, device: MpyDevice, key: str, info: MpvDescription) -> None:
         """Initialize the control."""
         super().__init__(device, key, info)
-        self._attr_name = f"PID {info.name}"
+        self._mpv_name = f"PID {info.name}"
+        self._attr_translation_key = slugify(self._mpv_name)
         self._attr_unique_id = f"{device.serial_number}_PID {info.name}"
         self._attr_native_min_value = -8388607
         self._attr_native_max_value = 8388607
@@ -114,13 +116,6 @@ class MpvSetupControl(MpvEntity, NumberEntity):
         self._key = key
         self._type = info.kind
 
-    @property
-    def icon(self) -> str:
-        """Return icon."""
-        if self._attr_name is not None and self._attr_name.startswith("Boost"):
-            return "mdi:water-thermometer-outline"
-        return "mdi:water-thermometer"
-
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -141,7 +136,6 @@ class MpvToutControl(MpvEntity, NumberEntity):
     _attr_native_max_value = 180
     _attr_native_step = 10
     _attr_native_unit_of_measurement = UnitOfTime.SECONDS
-    _attr_icon = "mdi:camera-timer"
 
     def __init__(self, device: MpyDevice, key: str) -> None:
         """Initialize the control."""

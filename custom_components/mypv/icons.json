@@ -1,0 +1,133 @@
+{
+  "entity": {
+    "button": {
+      "start_boost": {
+        "default": "mdi:heat-wave"
+      },
+      "stop_boost": {
+        "default": "mdi:heat-wave"
+      }
+    },
+    "number": {
+      "boost_min_temperature": {
+        "default": "mdi:water-thermometer-outline"
+      },
+      "control_value_timeout": {
+        "default": "mdi:camera-timer"
+      },
+      "target_temperature": {
+        "default": "mdi:water-thermometer"
+      }
+    },
+    "select": {
+      "control_type": {
+        "default": "mdi:format-list-bulleted-type"
+      }
+    },
+    "sensor": {
+      "acthor_9_power_unit_update_state": {
+        "default": "mdi:download",
+        "state": {
+          "no_new_fw_available": "mdi:clock-check-outline",
+          "new_fw_available": "mdi:update",
+          "download_interrupted": "mdi:download-off",
+          "download_finished_waiting_for_installation": "mdi:cellphone-arrow-down"
+        }
+      },
+      "control_state": {
+        "default": "mdi:water-boiler",
+        "state": {
+          "no_control": "mdi:water-boiler-off",
+          "standby": "mdi:water-boiler-auto",
+          "heat_finished": "mdi:water-boiler-off",
+          "stl_triggered": "mdi:water-boiler-alert",
+          "power_stage_overtemp": "mdi:water-boiler-alert",
+          "power_stage_pcb_temp_probe_fault": "mdi:water-boiler-alert",
+          "hardware_fault": "mdi:water-boiler-alert",
+          "elwa_temp_sensor_fault": "mdi:water-boiler-alert",
+          "mainboard_error": "mdi:water-boiler-alert"
+        }
+      },
+      "control_unit_fw_version": {
+        "default": "mdi:numeric"
+      },
+      "control_unit_update_state": {
+        "default": "mdi:download",
+        "state": {
+          "no_new_fw_available": "mdi:clock-check-outline",
+          "new_fw_available": "mdi:update",
+          "download_interrupted": "mdi:download-off",
+          "download_finished_waiting_for_installation": "mdi:cellphone-arrow-down"
+        }
+      },
+      "dns": {
+        "default": "mdi:ip-network"
+      },
+      "energy_consumption": {
+        "default": "mdi:meter-electric"
+      },
+      "energy_consumption_daily": {
+        "default": "mdi:meter-electric"
+      },
+      "energy_consumption_monthly": {
+        "default": "mdi:meter-electric"
+      },
+      "fan_speed": {
+        "default": "mdi:fan"
+      },
+      "gateway": {
+        "default": "mdi:ip-network"
+      },
+      "ip": {
+        "default": "mdi:ip-network"
+      },
+      "latest_control_unit_fw_version": {
+        "default": "mdi:numeric"
+      },
+      "latest_power_unit_fw_version": {
+        "default": "mdi:numeric"
+      },
+      "output_status": {
+        "default": "mdi:format-list-numbered"
+      },
+      "power_supply_state": {
+        "default": "mdi:state-machine"
+      },
+      "power_unit_fw_version": {
+        "default": "mdi:numeric"
+      },
+      "power_unit_update_state": {
+        "default": "mdi:download",
+        "state": {
+          "no_new_fw_available": "mdi:clock-check-outline",
+          "new_fw_available": "mdi:update",
+          "download_interrupted": "mdi:download-off",
+          "download_finished_waiting_for_installation": "mdi:cellphone-arrow-down"
+        }
+      },
+      "screen_mode": {
+        "default": "mdi:state-machine"
+      },
+      "status": {
+        "default": "mdi:water-boiler",
+        "state": {
+          "no_control": "mdi:water-boiler-off",
+          "standby": "mdi:water-boiler-auto",
+          "heat_finished": "mdi:water-boiler-off",
+          "stl_triggered": "mdi:water-boiler-alert",
+          "power_stage_overtemp": "mdi:water-boiler-alert",
+          "power_stage_pcb_temp_probe_fault": "mdi:water-boiler-alert",
+          "hardware_fault": "mdi:water-boiler-alert",
+          "elwa_temp_sensor_fault": "mdi:water-boiler-alert",
+          "mainboard_error": "mdi:water-boiler-alert"
+        }
+      },
+      "subnet_mask": {
+        "default": "mdi:ip-network"
+      },
+      "surplus": {
+        "default": "mdi:octagram-plus-outline"
+      }
+    }
+  }
+}

@@ -23,5 +23,581 @@
       "already_configured": "Device is already configured",
       "cannot_connect": "Failed to connect to the device"
     }
+  },
+  "entity": {
+    "binary_sensor": {
+      "alarm_relais": {
+        "name": "Alarm relais"
+      },
+      "block_active": {
+        "name": "Block active"
+      },
+      "boost_relais": {
+        "name": "Boost relais"
+      },
+      "night_flag": {
+        "name": "Night flag"
+      },
+      "out_2": {
+        "name": "Out 2"
+      },
+      "out_3": {
+        "name": "Out 3"
+      },
+      "relais": {
+        "name": "Relais"
+      },
+      "schicht": {
+        "name": "Schicht"
+      },
+      "wp_flag": {
+        "name": "wp_flag"
+      }
+    },
+    "button": {
+      "start_boost": {
+        "name": "Start Boost"
+      },
+      "stop_boost": {
+        "name": "Stop Boost"
+      }
+    },
+    "number": {
+      "boost_min_temperature": {
+        "name": "Boost Min Temperature"
+      },
+      "control_value_timeout": {
+        "name": "Control Value Timeout"
+      },
+      "pid_power": {
+        "name": "PID Power"
+      },
+      "pid_power_ac9": {
+        "name": "PID Power AC9"
+      },
+      "pid_power_ac9s": {
+        "name": "PID Power AC9s"
+      },
+      "pid_power_elwa_2": {
+        "name": "PID Power ELWA-2"
+      },
+      "power": {
+        "name": "Power"
+      },
+      "power_ac9": {
+        "name": "Power AC9"
+      },
+      "power_ac9s": {
+        "name": "Power AC9s"
+      },
+      "power_elwa_2": {
+        "name": "Power ELWA-2"
+      },
+      "target_temperature": {
+        "name": "Target Temperature"
+      }
+    },
+    "select": {
+      "control_type": {
+        "name": "Control type",
+        "state": {
+          "auto_detect": "Auto Detect",
+          "carlo_gavazzi_em24_manual": "Carlo Gavazzi EM24 Manual",
+          "digital_meter_p1": "Digital Meter P1",
+          "frequency": "Frequency",
+          "fronius_auto": "Fronius Auto",
+          "fronius_gen24_manual": "Fronius Gen24 Manual",
+          "fronius_manual": "Fronius Manual",
+          "fronius_sunspec_manual": "Fronius Sunspec Manual",
+          "growatt_modbus_rtu": "Growatt (Modbus RTU)",
+          "http": "HTTP",
+          "huawei_modbus_rtu": "Huawei (Modbus RTU)",
+          "huawei_modbus_tcp_manual": "Huawei (Modbus TCP) Manual",
+          "ime_conto_d4_modbus_mid_modbus_rtu": "IME Conto D4 Modbus MID (Modbus RTU)",
+          "kostal_piko_iq_plenticore_plus_manual": "Kostal PIKO IQ Plenticore plus Manual",
+          "kostal_smart_energy_meter_manual": "Kostal Smart Energy Meter Manual",
+          "mec_electronics_manual": "MEC electronics Manual",
+          "modbus_tcp": "Modbus TCP",
+          "my_pv_api": "my-PV API",
+          "my_pv_meter_auto": "my-PV Meter Auto",
+          "my_pv_meter_manual": "my-PV Meter Manual",
+          "my_pv_power_meter_direct": "my-PV Power Meter Direct",
+          "my_pv_wifi_meter_modbus_rtu": "my-PV WiFi Meter (Modbus RTU)",
+          "qcells_modbus_rtu": "Qcells (Modbus RTU)",
+          "rct_power_manual": "RCT Power Manual",
+          "sma_direct_meter_communication_auto": "SMA Direct meter communication Auto",
+          "sma_direct_meter_communication_manual": "SMA Direct meter communication Manual",
+          "sma_home_manager": "SMA Home Manager",
+          "solaredge_manual": "SolarEdge Manual",
+          "solax_manual": "Solax Manual",
+          "solax_modbus_rtu": "Solax (Modbus RTU)",
+          "steca_auto": "Steca Auto",
+          "sungrow_manual": "Sungrow Manual",
+          "varta_auto": "Varta Auto",
+          "varta_manual": "Varta Manual",
+          "victron_energy_1ph_manual": "Victron Energy 1ph Manual",
+          "victron_energy_3ph_manual": "Victron Energy 3ph Manual"
+        }
+      }
+    },
+    "sensor": {
+      "acthor_9_power_unit_update_state": {
+        "name": "Acthor 9 Power Unit Update State",
+        "state": {
+          "download_finished_waiting_for_installation": "Download finished, waiting for installation",
+          "download_interrupted": "Download interrupted",
+          "download_started_bin": "Download started (bin)",
+          "download_started_ini": "Download started (ini)",
+          "download_started_other": "Download started (other)",
+          "new_fw_available": "New fw available",
+          "no_new_fw_available": "No new fw available",
+          "state_not_available": "State not available"
+        }
+      },
+      "acthor_9s": {
+        "name": "Acthor 9s"
+      },
+      "boost_power": {
+        "name": "Boost Power"
+      },
+      "control_source": {
+        "name": "Control source"
+      },
+      "control_state": {
+        "name": "Control state",
+        "state": {
+          "boost_heat": "Boost heat",
+          "device_blocked": "Device blocked",
+          "device_disabled": "Device disabled",
+          "elwa_temp_sensor_fault": "ELWA Temp Sensor fault",
+          "hardware_fault": "Hardware fault",
+          "heat": "Heat",
+          "heat_finished": "Heat finished",
+          "legionella_boost_active": "Legionella-Boost active",
+          "mainboard_error": "Mainboard Error",
+          "no_control": "No control",
+          "power_stage_overtemp": "Power stage overtemp",
+          "power_stage_pcb_temp_probe_fault": "Power stage PCB temp probe fault",
+          "standby": "Standby",
+          "startup_dc_heating": "Startup DC-heating",
+          "state_not_available": "State not available",
+          "stl_triggered": "STL triggered"
+        }
+      },
+      "control_unit_fw_version": {
+        "name": "Control Unit Fw Version"
+      },
+      "control_unit_update_state": {
+        "name": "Control Unit Update State",
+        "state": {
+          "download_finished_waiting_for_installation": "Download finished, waiting for installation",
+          "download_interrupted": "Download interrupted",
+          "download_started_bin": "Download started (bin)",
+          "download_started_ini": "Download started (ini)",
+          "download_started_other": "Download started (other)",
+          "new_fw_available": "New fw available",
+          "no_new_fw_available": "No new fw available",
+          "state_not_available": "State not available"
+        }
+      },
+      "current_l1": {
+        "name": "Current L1"
+      },
+      "current_l2": {
+        "name": "Current L2"
+      },
+      "current_l3": {
+        "name": "Current L3"
+      },
+      "date": {
+        "name": "Date"
+      },
+      "device": {
+        "name": "Device"
+      },
+      "dns": {
+        "name": "DNS"
+      },
+      "ecarboostctr": {
+        "name": "ecarboostctr"
+      },
+      "ecarstate": {
+        "name": "ecarstate"
+      },
+      "energy_consumption": {
+        "name": "Energy consumption"
+      },
+      "energy_consumption_daily": {
+        "name": "Energy consumption daily"
+      },
+      "energy_consumption_monthly": {
+        "name": "Energy consumption monthly"
+      },
+      "error_state": {
+        "name": "Error state"
+      },
+      "fan_speed": {
+        "name": "Fan speed"
+      },
+      "frequency": {
+        "name": "Frequency"
+      },
+      "gateway": {
+        "name": "Gateway"
+      },
+      "ip": {
+        "name": "IP"
+      },
+      "latest_control_unit_fw_version": {
+        "name": "latest Control Unit Fw Version"
+      },
+      "latest_power_unit_fw_version": {
+        "name": "latest Power Unit Fw Version"
+      },
+      "latest_power_unit_fw_version_acthor_9": {
+        "name": "latest Power Unit Fw Version Acthor 9"
+      },
+      "legboostnext": {
+        "name": "legboostnext"
+      },
+      "load_nom": {
+        "name": "load_nom"
+      },
+      "load_state": {
+        "name": "load_state"
+      },
+      "loctime": {
+        "name": "Loctime"
+      },
+      "m0bat": {
+        "name": "m0bat"
+      },
+      "m0l1": {
+        "name": "m0l1"
+      },
+      "m0l2": {
+        "name": "m0l2"
+      },
+      "m0l3": {
+        "name": "m0l3"
+      },
+      "m0sum": {
+        "name": "m0sum"
+      },
+      "m1devstate": {
+        "name": "m1devstate"
+      },
+      "m1l1": {
+        "name": "m1l1"
+      },
+      "m1l2": {
+        "name": "m1l2"
+      },
+      "m1l3": {
+        "name": "m1l3"
+      },
+      "m1sum": {
+        "name": "m1sum"
+      },
+      "m2devstate": {
+        "name": "m2devstate"
+      },
+      "m2l1": {
+        "name": "m2l1"
+      },
+      "m2l2": {
+        "name": "m2l2"
+      },
+      "m2l3": {
+        "name": "m2l3"
+      },
+      "m2soc": {
+        "name": "m2soc"
+      },
+      "m2state": {
+        "name": "m2state"
+      },
+      "m2sum": {
+        "name": "m2sum"
+      },
+      "m3devstate": {
+        "name": "m3devstate"
+      },
+      "m3l1": {
+        "name": "m3l1"
+      },
+      "m3l2": {
+        "name": "m3l2"
+      },
+      "m3l3": {
+        "name": "m3l3"
+      },
+      "m3soc": {
+        "name": "m3soc"
+      },
+      "m3sum": {
+        "name": "m3sum"
+      },
+      "m4devstate": {
+        "name": "m4devstate"
+      },
+      "m4l1": {
+        "name": "m4l1"
+      },
+      "m4l2": {
+        "name": "m4l2"
+      },
+      "m4l3": {
+        "name": "m4l3"
+      },
+      "m4sum": {
+        "name": "m4sum"
+      },
+      "meter1_id": {
+        "name": "meter1_id"
+      },
+      "meter1_ip": {
+        "name": "meter1_ip"
+      },
+      "meter2_id": {
+        "name": "meter2_id"
+      },
+      "meter2_ip": {
+        "name": "meter2_ip"
+      },
+      "meter3_id": {
+        "name": "meter3_id"
+      },
+      "meter3_ip": {
+        "name": "meter3_ip"
+      },
+      "meter4_id": {
+        "name": "meter4_id"
+      },
+      "meter4_ip": {
+        "name": "meter4_ip"
+      },
+      "meter5_id": {
+        "name": "meter5_id"
+      },
+      "meter5_ip": {
+        "name": "meter5_ip"
+      },
+      "meter6_id": {
+        "name": "meter6_id"
+      },
+      "meter6_ip": {
+        "name": "meter6_ip"
+      },
+      "mss10": {
+        "name": "mss10"
+      },
+      "mss11": {
+        "name": "mss11"
+      },
+      "mss2": {
+        "name": "mss2"
+      },
+      "mss3": {
+        "name": "mss3"
+      },
+      "mss4": {
+        "name": "mss4"
+      },
+      "mss5": {
+        "name": "mss5"
+      },
+      "mss6": {
+        "name": "mss6"
+      },
+      "mss7": {
+        "name": "mss7"
+      },
+      "mss8": {
+        "name": "mss8"
+      },
+      "mss9": {
+        "name": "mss9"
+      },
+      "output_status": {
+        "name": "Output status"
+      },
+      "power": {
+        "name": "Power"
+      },
+      "power1_grid": {
+        "name": "power1_grid"
+      },
+      "power1_solar": {
+        "name": "power1_solar"
+      },
+      "power2_grid": {
+        "name": "power2_grid"
+      },
+      "power2_solar": {
+        "name": "power2_solar"
+      },
+      "power3_grid": {
+        "name": "power3_grid"
+      },
+      "power3_solar": {
+        "name": "power3_solar"
+      },
+      "power_ac9": {
+        "name": "Power AC9"
+      },
+      "power_ac9s": {
+        "name": "Power AC9s"
+      },
+      "power_elwa_2": {
+        "name": "Power ELWA-2"
+      },
+      "power_from_grid": {
+        "name": "Power from grid"
+      },
+      "power_from_grid_acthor_9": {
+        "name": "Power from grid Acthor 9"
+      },
+      "power_from_solar": {
+        "name": "Power from solar"
+      },
+      "power_from_solar_acthor_9": {
+        "name": "Power from solar Acthor 9"
+      },
+      "power_grid": {
+        "name": "Power Grid"
+      },
+      "power_max": {
+        "name": "Power max"
+      },
+      "power_solar": {
+        "name": "Power Solar"
+      },
+      "power_supply_state": {
+        "name": "Power supply state"
+      },
+      "power_unit_fw_version": {
+        "name": "Power Unit Fw Version"
+      },
+      "power_unit_fw_version_acthor_9": {
+        "name": "Power Unit Fw Version Acthor 9"
+      },
+      "power_unit_update_state": {
+        "name": "Power Unit Update State",
+        "state": {
+          "download_finished_waiting_for_installation": "Download finished, waiting for installation",
+          "download_interrupted": "Download interrupted",
+          "download_started_bin": "Download started (bin)",
+          "download_started_ini": "Download started (ini)",
+          "download_started_other": "Download started (other)",
+          "new_fw_available": "New fw available",
+          "no_new_fw_available": "No new fw available",
+          "state_not_available": "State not available"
+        }
+      },
+      "pump_pwm": {
+        "name": "Pump PWM"
+      },
+      "screen_mode": {
+        "name": "Screen mode"
+      },
+      "status": {
+        "name": "Status",
+        "state": {
+          "boost_heat": "Boost heat",
+          "device_blocked": "Device blocked",
+          "device_disabled": "Device disabled",
+          "elwa_temp_sensor_fault": "ELWA Temp Sensor fault",
+          "hardware_fault": "Hardware fault",
+          "heat": "Heat",
+          "heat_finished": "Heat finished",
+          "legionella_boost_active": "Legionella-Boost active",
+          "mainboard_error": "Mainboard Error",
+          "no_control": "No control",
+          "power_stage_overtemp": "Power stage overtemp",
+          "power_stage_pcb_temp_probe_fault": "Power stage PCB temp probe fault",
+          "standby": "Standby",
+          "startup_dc_heating": "Startup DC-heating",
+          "state_not_available": "State not available",
+          "stl_triggered": "STL triggered"
+        }
+      },
+      "subnet_mask": {
+        "name": "Subnet mask"
+      },
+      "surplus": {
+        "name": "Surplus"
+      },
+      "target_temperature": {
+        "name": "Target temperature"
+      },
+      "temp_power_unit": {
+        "name": "Temp Power Unit"
+      },
+      "temperatur_1": {
+        "name": "Temperatur 1"
+      },
+      "temperatur_2": {
+        "name": "Temperatur 2"
+      },
+      "temperatur_3": {
+        "name": "Temperatur 3"
+      },
+      "temperatur_4": {
+        "name": "Temperatur 4"
+      },
+      "unix_time": {
+        "name": "Unix time"
+      },
+      "update_files_left": {
+        "name": "Update files left"
+      },
+      "volt_l1": {
+        "name": "Volt L1"
+      },
+      "volt_l2": {
+        "name": "Volt L2"
+      },
+      "volt_l3": {
+        "name": "Volt L3"
+      },
+      "volt_out": {
+        "name": "Volt out"
+      },
+      "volt_solar": {
+        "name": "Volt solar"
+      },
+      "wp_time1_ctr": {
+        "name": "wp_time1_ctr"
+      },
+      "wp_time2_ctr": {
+        "name": "wp_time2_ctr"
+      },
+      "wp_time3_ctr": {
+        "name": "wp_time3_ctr"
+      }
+    },
+    "switch": {
+      "enable_boost_mode": {
+        "name": "Enable Boost Mode"
+      },
+      "enable_device": {
+        "name": "Enable Device"
+      },
+      "enable_http": {
+        "name": "Enable HTTP"
+      }
+    },
+    "update": {
+      "control_unit_firmware": {
+        "name": "Control Unit Firmware"
+      },
+      "power_unit_firmware": {
+        "name": "Power Unit Firmware"
+      },
+      "power_unit_firmware_acthor_9": {
+        "name": "Power Unit Firmware Acthor 9"
+      }
+    }
   }
 }

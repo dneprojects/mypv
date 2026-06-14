@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import slugify
 
 from .communicate import MypvCommunicator
 from .const import DOMAIN
@@ -15,8 +16,11 @@ if TYPE_CHECKING:
 class MpvEntity(CoordinatorEntity[MypvCommunicator]):
     """Base class shared by all myPV entities.
 
-    Provides the common name, unique id and device info wiring so the
-    individual platforms only have to deal with their own behaviour.
+    Provides the common translation key, unique id and device info wiring so
+    the individual platforms only have to deal with their own behaviour. The
+    display name is resolved through ``translation_key`` (derived from the
+    English name) while the unique id keeps using the raw name for backwards
+    compatibility with already registered entities.
     """
 
     _attr_has_entity_name = True
@@ -26,7 +30,8 @@ class MpvEntity(CoordinatorEntity[MypvCommunicator]):
         super().__init__(device.comm)
         self.device = device
         self.comm = device.comm
-        self._attr_name = name
+        self._mpv_name = name
+        self._attr_translation_key = slugify(name)
         self._attr_unique_id = f"{device.serial_number}_{name}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, device.serial_number)},

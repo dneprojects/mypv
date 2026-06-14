@@ -47,6 +47,57 @@ _DEVICE_CLASS_BY_UNIT: dict[str, SensorDeviceClass] = {
 # Kinds whose value is textual and therefore must not carry a state class.
 _TEXT_KINDS = ("text", "ip_string", "version")
 
+# Device state enums, keyed by the raw device value. The values are translated
+# through the entity ``state`` translations (keyed by the slugified value).
+DEV_STATE_ENUM_SOLTHOR: dict[int, str] = {
+    0: "State not available",
+    1: "No control",
+    2: "Heat",
+    3: "Standby",
+    4: "Boost heat",
+    5: "Heat finished",
+    7: "Startup DC-heating",
+    21: "Legionella-Boost active",
+    22: "Device disabled",
+    23: "Device blocked",
+}
+DEV_STATE_ENUM: dict[int, str] = {
+    0: "State not available",
+    1: "No control",
+    2: "Heat",
+    3: "Standby",
+    4: "Boost heat",
+    5: "Heat finished",
+    20: "Legionella-Boost active",
+    21: "Device disabled",
+    22: "Device blocked",
+    201: "STL triggered",
+    202: "Power stage overtemp",
+    203: "Power stage PCB temp probe fault",
+    204: "Hardware fault",
+    205: "ELWA Temp Sensor fault",
+    209: "Mainboard Error",
+}
+UPDATE_STATE_ENUM_SOLTHOR: dict[int, str] = {
+    0: "State not available",
+    1: "No new fw available",
+    2: "New fw available",
+    3: "Download started (ini)",
+    4: "Download started (bin)",
+    5: "Download started (other)",
+    6: "Download interrupted",
+    7: "Download finished, waiting for installation",
+}
+UPDATE_STATE_ENUM: dict[int, str] = {
+    0: "No new fw available",
+    1: "New fw available",
+    2: "Download started (ini)",
+    3: "Download started (bin)",
+    4: "Download started (other)",
+    5: "Download interrupted",
+    10: "Download finished, waiting for installation",
+}
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -83,22 +134,6 @@ class MpvSensor(MpvEntity, SensorEntity):
             # Entity will initially be disabled
             self._attr_entity_registry_enabled_default = False
 
-    @property
-    def icon(self) -> str | None:
-        """Return icon."""
-        name = self._attr_name or ""
-        if name in ("IP", "DNS", "Gateway", "Subnet mask"):
-            return "mdi:ip-network"
-        if name.split()[-1:] == ["Version"]:
-            return "mdi:numeric"
-        if name.split()[-1:] == ["Surplus"]:
-            return "mdi:octagram-plus-outline"
-        if name in ("Screen mode", "Power supply state"):
-            return "mdi:state-machine"
-        if name == "Fan speed":
-            return "mdi:fan"
-        return None
-
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -122,8 +157,6 @@ class MpvSensor(MpvEntity, SensorEntity):
 class MpvOutStatSensor(MpvSensor):
     """Return output state from last digit for AC-Thor 9s."""
 
-    _attr_icon = "mdi:format-list-numbered"
-
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -146,45 +179,14 @@ class MpvUpdateSensor(MpvSensor):
         """Initialize the sensor."""
         super().__init__(device, key, info)
         self._last_value = 0
-        if device.model == "Solthor":
-            self._enum = {
-                0: "State not available",
-                1: "No new fw available",
-                2: "New fw available",
-                3: "Download started (ini)",
-                4: "Download started (bin)",
-                5: "Download started (other)",
-                6: "Download interrupted",
-                7: "Download finished, waiting for installation",
-            }
-        else:
-            self._enum = {
-                0: "No new fw available",
-                1: "New fw available",
-                2: "Download started (ini)",
-                3: "Download started (bin)",
-                4: "Download started (other)",
-                5: "Download interrupted",
-                10: "Download finished, waiting for installation",
-            }
+        self._enum = (
+            UPDATE_STATE_ENUM_SOLTHOR
+            if device.model == "Solthor"
+            else UPDATE_STATE_ENUM
+        )
         self._attr_device_class = SensorDeviceClass.ENUM
         self._attr_state_class = None
-        self._attr_options = list(self._enum.values())
-
-    @property
-    def icon(self) -> str:
-        """Return icon."""
-        match self._enum.get(self._last_value):
-            case "No new fw available":
-                return "mdi:clock-check-outline"
-            case "New fw available":
-                return "mdi:update"
-            case "Download interrupted":
-                return "mdi:download-off"
-            case "Download finished, waiting for installation":
-                return "mdi:cellphone-arrow-down"
-            case _:
-                return "mdi:download"
+        self._attr_options = [slugify(value) for value in self._enum.values()]
 
     @property
     def native_value(self) -> str | None:
@@ -192,7 +194,8 @@ class MpvUpdateSensor(MpvSensor):
         value = self.device.data.get(self._key)
         if value is not None:
             self._last_value = value
-        return self._enum.get(self._last_value)
+        display = self._enum.get(self._last_value)
+        return slugify(display) if display is not None else None
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -207,60 +210,20 @@ class MpvDevStatSensor(MpvSensor):
         """Initialize the sensor."""
         super().__init__(device, key, info)
         self._last_value = 1
-        if device.model == "Solthor":
-            self._enum = {
-                0: "State not available",
-                1: "No control",
-                2: "Heat",
-                3: "Standby",
-                4: "Boost heat",
-                5: "Heat finished",
-                7: "Startup DC-heating",
-                21: "Legionella-Boost active",
-                22: "Device disabled",
-                23: "Device blocked",
-            }
-        else:
-            self._enum = {
-                0: "State not available",
-                1: "No control",
-                2: "Heat",
-                3: "Standby",
-                4: "Boost heat",
-                5: "Heat finished",
-                20: "Legionella-Boost active",
-                21: "Device disabled",
-                22: "Device blocked",
-                201: "STL triggered",
-                202: "Power stage overtemp",
-                203: "Power stage PCB temp probe fault",
-                204: "Hardware fault",
-                205: "ELWA Temp Sensor fault",
-                209: "Mainboard Error",
-            }
+        self._enum = (
+            DEV_STATE_ENUM_SOLTHOR if device.model == "Solthor" else DEV_STATE_ENUM
+        )
         self._attr_device_class = SensorDeviceClass.ENUM
         self._attr_state_class = None
-        self._attr_options = list(self._enum.values())
-
-    @property
-    def icon(self) -> str:
-        """Return icon."""
-        if self._last_value == 1:
-            return "mdi:water-boiler-off"
-        if self._last_value == 3:
-            return "mdi:water-boiler-auto"
-        if self._last_value == 5:
-            return "mdi:water-boiler-off"
-        if self._last_value > 200:
-            return "mdi:water-boiler-alert"
-        return "mdi:water-boiler"
+        self._attr_options = [slugify(value) for value in self._enum.values()]
 
     @property
     def native_value(self) -> str | None:
         """Return the state of the device."""
         if self.device.state is not None:
             self._last_value = self.device.state + 1
-        return self._enum.get(self._last_value)
+        display = self._enum.get(self._last_value)
+        return slugify(display) if display is not None else None
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -273,7 +236,6 @@ class MpvEnergySensor(IntegrationSensor, MpvSensor):
 
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_state_class = SensorStateClass.TOTAL
-    _attr_icon = "mdi:meter-electric"
 
     def __init__(
         self,

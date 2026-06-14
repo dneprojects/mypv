@@ -7,6 +7,7 @@ from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import slugify
 
 from .const import COMM_HUB, DOMAIN, MpvDescription
 from .entity import MpvEntity
@@ -76,8 +77,6 @@ async def async_setup_entry(
 class MpvCtrlTypeSelect(MpvEntity, SelectEntity):
     """Return control type state as select entity."""
 
-    _attr_icon = "mdi:format-list-bulleted-type"
-
     def __init__(self, device: MpyDevice, key: str, info: MpvDescription) -> None:
         """Initialize the select."""
         super().__init__(device, info.name)
@@ -85,16 +84,16 @@ class MpvCtrlTypeSelect(MpvEntity, SelectEntity):
         self._type = info.kind
         self._last_value = 0
         self._enum = CTRL_TYPES
-        self._attr_options = list(self._enum.values())
+        self._attr_options = [slugify(value) for value in self._enum.values()]
 
     @property
     def current_option(self) -> str | None:
         """Return the current selected option."""
         state = self.device.setup.get(self._key)
-        if state is None:
-            return self._enum.get(self._last_value)
-        self._last_value = state
-        return self._enum.get(state)
+        if state is not None:
+            self._last_value = state
+        display = self._enum.get(self._last_value)
+        return slugify(display) if display is not None else None
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -107,7 +106,7 @@ class MpvCtrlTypeSelect(MpvEntity, SelectEntity):
     async def async_select_option(self, option: str) -> None:
         """Change the selected option."""
         for key, value in self._enum.items():
-            if value == option:
+            if slugify(value) == option:
                 await self.comm.set_number(self.device, self._key, key)
                 # Update setup data after setting
                 resp = await self.comm.setup_update(self.device)

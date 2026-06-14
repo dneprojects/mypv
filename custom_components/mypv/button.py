@@ -32,8 +32,6 @@ async def async_setup_entry(
 class MpvBoostButton(MpvEntity, ButtonEntity):
     """Representation of myPV button."""
 
-    _attr_icon = "mdi:heat-wave"
-
     def __init__(self, device: MpyDevice, key: str, info: MpvDescription) -> None:
         """Initialize the button."""
         super().__init__(device, info.name)
