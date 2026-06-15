@@ -1,0 +1,23 @@
+# Pre-commit hooks for the myPV integration repo.
+#
+# Local install: ``pip install pre-commit && pre-commit install``.
+# Each commit runs ruff (lint + format) and hassfest on the integration.
+# mypy and pytest are not included here on purpose -- they need the full
+# Home Assistant test environment, which is heavier than a pre-commit hook
+# should be. Run those via the test venv / CI before pushing.
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.17
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+  - repo: local
+    hooks:
+      - id: hassfest
+        name: hassfest (validate manifest, strings, icons, services)
+        entry: scripts/hassfest.sh
+        language: script
+        pass_filenames: false
+        files: ^custom_components/mypv/

@@ -1,3 +1,6 @@
 dev-env/
 .DS_Store
 *.pyc
+.coverage
+htmlcov/
+.pytest_cache/
