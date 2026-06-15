@@ -1,5 +1,10 @@
 # Latest changes
 
+## v1.4.2
+
+### Bug fixes
+- Energy sensor names are now translated (they were stuck in English regardless of the configured language).
+
 ## v1.4.1
 
 ### Improvements
