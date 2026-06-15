@@ -45,8 +45,9 @@ _DEVICE_CLASS_BY_UNIT: dict[str, SensorDeviceClass] = {
 }
 
 # Sensors that are added as diagnostic and disabled by default. Network
-# addresses, screen/fan diagnostics, the firmware versions (already shown via
-# the update entities) and the L1 mains voltage.
+# addresses, screen/fan diagnostics, the firmware versions and update states
+# (already represented by the update entities), the power-unit temperature and
+# the L1 mains voltage.
 _DIAGNOSTIC_DISABLED_KEYS = frozenset(
     {
         "cur_ip",
@@ -58,6 +59,10 @@ _DIAGNOSTIC_DISABLED_KEYS = frozenset(
         "fwversion",
         "psversion",
         "p9sversion",
+        "upd_state",
+        "ps_upd_state",
+        "p9s_upd_state",
+        "temp_ps",
         "volt_mains",
     }
 )
