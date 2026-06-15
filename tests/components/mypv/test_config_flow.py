@@ -6,7 +6,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 from custom_components.mypv.const import CONF_HOSTS, DEV_IP, DOMAIN
-from homeassistant.config_entries import SOURCE_DHCP, SOURCE_USER
+from homeassistant.config_entries import SOURCE_DHCP, SOURCE_DISCOVERY, SOURCE_USER
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
@@ -109,6 +109,39 @@ async def test_dhcp_discovery_flow(
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"] == {DEV_IP: MOCK_IP, CONF_HOSTS: [MOCK_IP]}
     assert result["result"].unique_id == f"mypv_{MOCK_IP}"
+
+
+async def test_discovery_flow(
+    hass: HomeAssistant,
+    mock_device: AiohttpClientMocker,
+    mock_setup_entry: AsyncMock,
+) -> None:
+    """A device found by the background scanner can be confirmed and added."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_DISCOVERY}, data={"ip": MOCK_IP}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "confirm"
+
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {DEV_IP: MOCK_IP, CONF_HOSTS: [MOCK_IP]}
+
+
+async def test_discovery_cannot_connect(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A discovery for an unreachable device aborts."""
+    aioclient_mock.get(f"http://{MOCK_IP}/mypv_dev.jsn", exc=TimeoutError())
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_DISCOVERY}, data={"ip": MOCK_IP}
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "cannot_connect"
 
 
 async def test_dhcp_already_configured(
