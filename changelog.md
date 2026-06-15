@@ -1,5 +1,15 @@
 # Latest changes
 
+## v1.4.0
+
+### Improvements
+- Entities report their value immediately on startup instead of waiting for the first poll.
+- Setup retries automatically when the device is unreachable; cleaner unload.
+- Declared as a config-entry-only integration (removed the dead YAML import path); passes hassfest without warnings.
+
+### Quality
+- Added a test suite (~98% coverage) and a pre-commit suite (ruff + hassfest).
+
 ## v1.3.3
 
 ### Improvements
