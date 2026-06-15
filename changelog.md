@@ -1,5 +1,10 @@
 # Latest changes
 
+## v1.4.1
+
+### Improvements
+- German translations for all entity names and states.
+
 ## v1.4.0
 
 ### Improvements
