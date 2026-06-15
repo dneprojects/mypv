@@ -23,5 +23,347 @@
       "already_configured": "Gerät ist bereits konfiguriert",
       "cannot_connect": "Verbindung zum Gerät fehlgeschlagen"
     }
+  },
+  "entity": {
+    "binary_sensor": {
+      "alarm_relais": {
+        "name": "Alarmrelais"
+      },
+      "block_active": {
+        "name": "Block aktiv"
+      },
+      "boost_relais": {
+        "name": "Boost-Relais"
+      },
+      "night_flag": {
+        "name": "Nachtmodus"
+      },
+      "out_2": {
+        "name": "Ausgang 2"
+      },
+      "out_3": {
+        "name": "Ausgang 3"
+      },
+      "schicht": {
+        "name": "Schichtung"
+      }
+    },
+    "button": {
+      "start_boost": {
+        "name": "Boost starten"
+      },
+      "stop_boost": {
+        "name": "Boost stoppen"
+      }
+    },
+    "number": {
+      "boost_min_temperature": {
+        "name": "Boost-Mindesttemperatur"
+      },
+      "control_value_timeout": {
+        "name": "Zeitablauf Ansteuerung"
+      },
+      "pid_power": {
+        "name": "PID-Leistung"
+      },
+      "pid_power_ac9": {
+        "name": "PID-Leistung AC9"
+      },
+      "pid_power_ac9s": {
+        "name": "PID-Leistung AC9s"
+      },
+      "pid_power_elwa_2": {
+        "name": "PID-Leistung ELWA-2"
+      },
+      "power": {
+        "name": "Leistung"
+      },
+      "power_ac9": {
+        "name": "Leistung AC9"
+      },
+      "power_ac9s": {
+        "name": "Leistung AC9s"
+      },
+      "power_elwa_2": {
+        "name": "Leistung ELWA-2"
+      },
+      "target_temperature": {
+        "name": "Zieltemperatur"
+      }
+    },
+    "select": {
+      "control_type": {
+        "name": "Steuerungstyp",
+        "state": {
+          "auto_detect": "Automatische Erkennung",
+          "frequency": "Frequenz",
+          "digital_meter_p1": "Digitaler Zähler P1",
+          "my_pv_meter_auto": "my-PV Zähler Auto",
+          "my_pv_meter_manual": "my-PV Zähler manuell",
+          "my_pv_power_meter_direct": "my-PV Leistungszähler direkt",
+          "my_pv_wifi_meter_modbus_rtu": "my-PV WLAN-Zähler (Modbus RTU)",
+          "sma_direct_meter_communication_auto": "SMA direkte Zählerkommunikation Auto",
+          "sma_direct_meter_communication_manual": "SMA direkte Zählerkommunikation manuell",
+          "fronius_manual": "Fronius manuell",
+          "fronius_sunspec_manual": "Fronius SunSpec manuell",
+          "fronius_gen24_manual": "Fronius Gen24 manuell",
+          "kostal_piko_iq_plenticore_plus_manual": "Kostal PIKO IQ Plenticore plus manuell",
+          "kostal_smart_energy_meter_manual": "Kostal Smart Energy Meter manuell",
+          "mec_electronics_manual": "MEC electronics manuell",
+          "solaredge_manual": "SolarEdge manuell",
+          "victron_energy_1ph_manual": "Victron Energy 1ph manuell",
+          "victron_energy_3ph_manual": "Victron Energy 3ph manuell",
+          "huawei_modbus_tcp_manual": "Huawei (Modbus TCP) manuell",
+          "carlo_gavazzi_em24_manual": "Carlo Gavazzi EM24 manuell",
+          "sungrow_manual": "Sungrow manuell",
+          "solax_manual": "Solax manuell",
+          "rct_power_manual": "RCT Power manuell",
+          "varta_manual": "Varta manuell"
+        }
+      }
+    },
+    "sensor": {
+      "acthor_9_power_unit_update_state": {
+        "name": "Update-Status Leistungseinheit Acthor 9",
+        "state": {
+          "no_new_fw_available": "Keine neue Firmware verfügbar",
+          "new_fw_available": "Neue Firmware verfügbar",
+          "download_started_ini": "Download gestartet (ini)",
+          "download_started_bin": "Download gestartet (bin)",
+          "download_started_other": "Download gestartet (sonstige)",
+          "download_interrupted": "Download unterbrochen",
+          "download_finished_waiting_for_installation": "Download abgeschlossen, wartet auf Installation",
+          "state_not_available": "Status nicht verfügbar"
+        }
+      },
+      "boost_power": {
+        "name": "Boost-Leistung"
+      },
+      "control_source": {
+        "name": "Steuerquelle"
+      },
+      "control_state": {
+        "name": "Steuerungsstatus",
+        "state": {
+          "no_control": "Keine Steuerung",
+          "heat": "Heizen",
+          "standby": "Standby",
+          "boost_heat": "Boost-Heizen",
+          "heat_finished": "Heizen beendet",
+          "startup_dc_heating": "Start DC-Heizen",
+          "legionella_boost_active": "Legionellen-Boost aktiv",
+          "device_disabled": "Gerät deaktiviert",
+          "device_blocked": "Gerät blockiert",
+          "state_not_available": "Status nicht verfügbar",
+          "stl_triggered": "STL ausgelöst",
+          "power_stage_overtemp": "Leistungsstufe Übertemperatur",
+          "power_stage_pcb_temp_probe_fault": "Leistungsstufe PCB-Temperaturfühler-Fehler",
+          "hardware_fault": "Hardware-Fehler",
+          "elwa_temp_sensor_fault": "ELWA-Temperatursensor-Fehler",
+          "mainboard_error": "Mainboard-Fehler"
+        }
+      },
+      "control_unit_fw_version": {
+        "name": "Firmware-Version Steuereinheit"
+      },
+      "control_unit_update_state": {
+        "name": "Update-Status Steuereinheit",
+        "state": {
+          "no_new_fw_available": "Keine neue Firmware verfügbar",
+          "new_fw_available": "Neue Firmware verfügbar",
+          "download_started_ini": "Download gestartet (ini)",
+          "download_started_bin": "Download gestartet (bin)",
+          "download_started_other": "Download gestartet (sonstige)",
+          "download_interrupted": "Download unterbrochen",
+          "download_finished_waiting_for_installation": "Download abgeschlossen, wartet auf Installation",
+          "state_not_available": "Status nicht verfügbar"
+        }
+      },
+      "current_l1": {
+        "name": "Strom L1"
+      },
+      "current_l2": {
+        "name": "Strom L2"
+      },
+      "current_l3": {
+        "name": "Strom L3"
+      },
+      "date": {
+        "name": "Datum"
+      },
+      "device": {
+        "name": "Gerät"
+      },
+      "energy_consumption": {
+        "name": "Energieverbrauch"
+      },
+      "energy_consumption_daily": {
+        "name": "Energieverbrauch täglich"
+      },
+      "energy_consumption_monthly": {
+        "name": "Energieverbrauch monatlich"
+      },
+      "error_state": {
+        "name": "Fehlerstatus"
+      },
+      "fan_speed": {
+        "name": "Lüfterdrehzahl"
+      },
+      "frequency": {
+        "name": "Frequenz"
+      },
+      "latest_control_unit_fw_version": {
+        "name": "neueste Firmware-Version Steuereinheit"
+      },
+      "latest_power_unit_fw_version": {
+        "name": "neueste Firmware-Version Leistungseinheit"
+      },
+      "latest_power_unit_fw_version_acthor_9": {
+        "name": "neueste Firmware-Version Leistungseinheit Acthor 9"
+      },
+      "loctime": {
+        "name": "Lokalzeit"
+      },
+      "output_status": {
+        "name": "Ausgangsstatus"
+      },
+      "power": {
+        "name": "Leistung"
+      },
+      "power_ac9": {
+        "name": "Leistung AC9"
+      },
+      "power_ac9s": {
+        "name": "Leistung AC9s"
+      },
+      "power_elwa_2": {
+        "name": "Leistung ELWA-2"
+      },
+      "power_from_grid": {
+        "name": "Leistung aus Netz"
+      },
+      "power_from_grid_acthor_9": {
+        "name": "Leistung aus Netz Acthor 9"
+      },
+      "power_from_solar": {
+        "name": "Leistung aus Solar"
+      },
+      "power_from_solar_acthor_9": {
+        "name": "Leistung aus Solar Acthor 9"
+      },
+      "power_grid": {
+        "name": "Netzleistung"
+      },
+      "power_max": {
+        "name": "Leistung max"
+      },
+      "power_solar": {
+        "name": "Solarleistung"
+      },
+      "power_supply_state": {
+        "name": "Netzteilstatus"
+      },
+      "power_unit_fw_version": {
+        "name": "Firmware-Version Leistungseinheit"
+      },
+      "power_unit_fw_version_acthor_9": {
+        "name": "Firmware-Version Leistungseinheit Acthor 9"
+      },
+      "power_unit_update_state": {
+        "name": "Update-Status Leistungseinheit",
+        "state": {
+          "no_new_fw_available": "Keine neue Firmware verfügbar",
+          "new_fw_available": "Neue Firmware verfügbar",
+          "download_started_ini": "Download gestartet (ini)",
+          "download_started_bin": "Download gestartet (bin)",
+          "download_started_other": "Download gestartet (sonstige)",
+          "download_interrupted": "Download unterbrochen",
+          "download_finished_waiting_for_installation": "Download abgeschlossen, wartet auf Installation",
+          "state_not_available": "Status nicht verfügbar"
+        }
+      },
+      "pump_pwm": {
+        "name": "Pumpen-PWM"
+      },
+      "screen_mode": {
+        "name": "Bildschirmmodus"
+      },
+      "status": {
+        "name": "Status",
+        "state": {
+          "no_control": "Keine Steuerung",
+          "heat": "Heizen",
+          "standby": "Standby",
+          "boost_heat": "Boost-Heizen",
+          "heat_finished": "Heizen beendet",
+          "startup_dc_heating": "Start DC-Heizen",
+          "legionella_boost_active": "Legionellen-Boost aktiv",
+          "device_disabled": "Gerät deaktiviert",
+          "device_blocked": "Gerät blockiert",
+          "state_not_available": "Status nicht verfügbar",
+          "stl_triggered": "STL ausgelöst",
+          "power_stage_overtemp": "Leistungsstufe Übertemperatur",
+          "power_stage_pcb_temp_probe_fault": "Leistungsstufe PCB-Temperaturfühler-Fehler",
+          "hardware_fault": "Hardware-Fehler",
+          "elwa_temp_sensor_fault": "ELWA-Temperatursensor-Fehler",
+          "mainboard_error": "Mainboard-Fehler"
+        }
+      },
+      "subnet_mask": {
+        "name": "Subnetzmaske"
+      },
+      "surplus": {
+        "name": "Überschuss"
+      },
+      "target_temperature": {
+        "name": "Zieltemperatur"
+      },
+      "temp_power_unit": {
+        "name": "Temperatur Leistungseinheit"
+      },
+      "unix_time": {
+        "name": "Unix-Zeit"
+      },
+      "update_files_left": {
+        "name": "Verbleibende Update-Dateien"
+      },
+      "volt_l1": {
+        "name": "Spannung L1"
+      },
+      "volt_l2": {
+        "name": "Spannung L2"
+      },
+      "volt_l3": {
+        "name": "Spannung L3"
+      },
+      "volt_out": {
+        "name": "Spannung Ausgang"
+      },
+      "volt_solar": {
+        "name": "Spannung Solar"
+      }
+    },
+    "switch": {
+      "enable_boost_mode": {
+        "name": "Boost-Modus aktivieren"
+      },
+      "enable_device": {
+        "name": "Gerät aktivieren"
+      },
+      "enable_http": {
+        "name": "HTTP aktivieren"
+      }
+    },
+    "update": {
+      "control_unit_firmware": {
+        "name": "Firmware Steuereinheit"
+      },
+      "power_unit_firmware": {
+        "name": "Firmware Leistungseinheit"
+      },
+      "power_unit_firmware_acthor_9": {
+        "name": "Firmware Leistungseinheit Acthor 9"
+      }
+    }
   }
 }
