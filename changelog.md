@@ -1,9 +1,6 @@
 # Latest changes
 
-## v1.3.2
-
-### New feature
-- Report-only firmware `update` entities for the control unit and the power unit.
+## v1.3.3
 
 ### Improvements
 - Entity names and enum states are now translatable (translation keys); all icons moved to `icons.json`.
@@ -16,3 +13,8 @@
 ### Bug fixes
 - Non-numeric sensors (e.g. control source) no longer raise a state class error.
 - Reset-energy-sensor service and the "Enable HTTP" switch-off now work.
+
+## v1.3.2
+
+### New feature
+- Report-only firmware `update` entities for the control unit and the power unit.
