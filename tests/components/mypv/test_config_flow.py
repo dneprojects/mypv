@@ -1,6 +1,6 @@
 """Tests for the myPV config flow."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
@@ -160,3 +160,85 @@ async def test_dhcp_already_configured(
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
+
+
+async def test_dhcp_cannot_connect(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A DHCP discovery for an unreachable device aborts."""
+    aioclient_mock.get(f"http://{MOCK_IP}/mypv_dev.jsn", exc=TimeoutError())
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_DHCP},
+        data=DhcpServiceInfo(ip=MOCK_IP, hostname="mypv", macaddress="986d35000000"),
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "cannot_connect"
+
+
+async def test_confirm_cannot_connect(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    mock_device: AiohttpClientMocker,
+) -> None:
+    """If the device drops out before confirmation, the flow aborts."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_DISCOVERY}, data={"ip": MOCK_IP}
+    )
+    assert result["step_id"] == "confirm"
+
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"http://{MOCK_IP}/mypv_dev.jsn", exc=TimeoutError())
+
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "cannot_connect"
+
+
+async def test_user_flow_with_discovered_devices(
+    hass: HomeAssistant,
+    mock_device: AiohttpClientMocker,
+    mock_setup_entry: AsyncMock,
+) -> None:
+    """The user step offers discovered devices and adds the chosen one."""
+    with patch(
+        "custom_components.mypv.config_flow.async_discover_mypv_devices",
+        new=AsyncMock(return_value=[{"ip": MOCK_IP, "host": "AC ELWA 2"}]),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": SOURCE_USER}
+        )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {DEV_IP: MOCK_IP}
+    )
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {DEV_IP: MOCK_IP, CONF_HOSTS: [MOCK_IP]}
+
+
+async def test_user_flow_unnamed_device(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    mock_setup_entry: AsyncMock,
+) -> None:
+    """A device that reports no name falls back to the generic title."""
+    aioclient_mock.get(
+        f"http://{MOCK_IP}/mypv_dev.jsn", json={"sn": "x", "fwversion": "y"}
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {DEV_IP: MOCK_IP}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == f"myPV ({MOCK_IP})"

@@ -91,6 +91,36 @@ async def test_button_press(
     assert any("bststrt=1" in url for url in _requested(mock_device))
 
 
+async def test_power_control_set_value(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    mock_device: AiohttpClientMocker,
+) -> None:
+    """Setting the power control writes the control.html power endpoint."""
+    await hass.services.async_call(
+        NUMBER_DOMAIN,
+        SERVICE_SET_VALUE,
+        {ATTR_ENTITY_ID: f"number.{PREFIX}_power_elwa_2", ATTR_VALUE: 2500},
+        blocking=True,
+    )
+    assert any("power=2500" in url for url in _requested(mock_device))
+
+
+async def test_timeout_set_value(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    mock_device: AiohttpClientMocker,
+) -> None:
+    """Setting the control value timeout writes setup.jsn with the value."""
+    await hass.services.async_call(
+        NUMBER_DOMAIN,
+        SERVICE_SET_VALUE,
+        {ATTR_ENTITY_ID: f"number.{PREFIX}_control_value_timeout", ATTR_VALUE: 120},
+        blocking=True,
+    )
+    assert any("tout=120" in url for url in _requested(mock_device))
+
+
 async def test_pid_power_set_value(
     hass: HomeAssistant,
     setup_integration: MockConfigEntry,

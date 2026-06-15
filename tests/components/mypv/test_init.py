@@ -1,13 +1,20 @@
 """Tests for the myPV integration setup and unload."""
 
+from unittest.mock import AsyncMock, patch
+
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
+from custom_components.mypv import async_remove_config_entry_device
 from custom_components.mypv.const import COMM_HUB, DOMAIN
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from homeassistant.setup import async_setup_component
 
-from .const import MOCK_IP
+from .const import MOCK_IP, MYPV_DEV_JSN
+from .test_entities import PREFIX
 
 
 async def test_setup_and_unload(
@@ -36,6 +43,22 @@ async def test_setup_cannot_connect(
     assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
 
 
+async def test_setup_data_unreadable(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """A device that answers identification but not data triggers a retry."""
+    aioclient_mock.get(f"http://{MOCK_IP}/mypv_dev.jsn", json=MYPV_DEV_JSN)
+    aioclient_mock.get(f"http://{MOCK_IP}/setup.jsn", exc=TimeoutError())
+    aioclient_mock.get(f"http://{MOCK_IP}/data.jsn", exc=TimeoutError())
+    mock_config_entry.add_to_hass(hass)
+
+    assert not await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
+
+
 async def test_coordinator_update_failure(
     hass: HomeAssistant,
     setup_integration: MockConfigEntry,
@@ -53,3 +76,74 @@ async def test_coordinator_update_failure(
     await comm.async_refresh()
     await hass.async_block_till_done()
     assert comm.last_update_success is False
+
+
+async def test_async_setup_discovery_creates_flow(
+    hass: HomeAssistant, mock_device: AiohttpClientMocker
+) -> None:
+    """The background discovery starts a config flow for each device found."""
+    with patch(
+        "custom_components.mypv.async_discover_mypv_devices",
+        new=AsyncMock(return_value=[{"ip": MOCK_IP}]),
+    ):
+        assert await async_setup_component(hass, DOMAIN, {})
+        await hass.async_block_till_done()
+
+    flows = hass.config_entries.flow.async_progress()
+    assert any(flow["handler"] == DOMAIN for flow in flows)
+
+
+async def test_async_setup_discovery_handles_error(hass: HomeAssistant) -> None:
+    """A failing discovery does not break setup."""
+    with patch(
+        "custom_components.mypv.async_discover_mypv_devices",
+        new=AsyncMock(side_effect=OSError("boom")),
+    ):
+        assert await async_setup_component(hass, DOMAIN, {})
+        await hass.async_block_till_done()
+
+
+async def test_reset_service_skips_non_energy_entity(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    """The reset service resets energy sensors and skips others."""
+    # Energy sensor -> has async_reset.
+    await hass.services.async_call(
+        DOMAIN,
+        "reset_energy_sensor",
+        {ATTR_ENTITY_ID: f"sensor.{PREFIX}_energy_consumption"},
+        blocking=True,
+    )
+    # Plain sensor -> no async_reset, handled gracefully.
+    await hass.services.async_call(
+        DOMAIN,
+        "reset_energy_sensor",
+        {ATTR_ENTITY_ID: f"sensor.{PREFIX}_temperatur_1"},
+        blocking=True,
+    )
+
+
+async def test_reset_service_without_sensor_component(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    """The reset service logs and returns when the sensor platform is absent."""
+    hass.data.pop("sensor", None)
+    await hass.services.async_call(
+        DOMAIN,
+        "reset_energy_sensor",
+        {ATTR_ENTITY_ID: f"sensor.{PREFIX}_energy_consumption"},
+        blocking=True,
+    )
+
+
+async def test_remove_config_entry_device(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    """A device may always be removed from the config entry."""
+    device_registry = dr.async_get(hass)
+    device = next(
+        device
+        for device in device_registry.devices.values()
+        if setup_integration.entry_id in device.config_entries
+    )
+    assert await async_remove_config_entry_device(hass, setup_integration, device)
