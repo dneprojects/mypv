@@ -28,6 +28,7 @@ DATA_JSN: Final[dict[str, Any]] = {
     "rel1_out": 1,
     "load_nom": 3500,
     "volt_mains": 2301,
+    "curr_mains": 85,
     "ctrlstate": "No Control",
     "upd_state": 0,
     "surplus": 0,
