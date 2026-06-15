@@ -44,6 +44,24 @@ _DEVICE_CLASS_BY_UNIT: dict[str, SensorDeviceClass] = {
     UnitOfFrequency.HERTZ: SensorDeviceClass.FREQUENCY,
 }
 
+# Sensors that are added as diagnostic and disabled by default. Network
+# addresses, screen/fan diagnostics, the firmware versions (already shown via
+# the update entities) and the L1 mains voltage.
+_DIAGNOSTIC_DISABLED_KEYS = frozenset(
+    {
+        "cur_ip",
+        "cur_sn",
+        "cur_gw",
+        "cur_dns",
+        "screen_mode_flag",
+        "fan_speed",
+        "fwversion",
+        "psversion",
+        "p9sversion",
+        "volt_mains",
+    }
+)
+
 # Device state enums, keyed by the raw device value. The values are translated
 # through the entity ``state`` translations (keyed by the slugified value).
 DEV_STATE_ENUM_SOLTHOR: dict[int, str] = {
@@ -129,7 +147,10 @@ class MpvSensor(MpvEntity, SensorEntity):
         # a measurement state class or HA rejects their non-numeric value.
         if info.unit is None:
             self._attr_state_class = None
-        if key.split("_", maxsplit=1)[0] in ("power1", "power2", "power3"):
+        if (
+            key.split("_", maxsplit=1)[0] in ("power1", "power2", "power3")
+            or key in _DIAGNOSTIC_DISABLED_KEYS
+        ):
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
             # Entity will initially be disabled
             self._attr_entity_registry_enabled_default = False
