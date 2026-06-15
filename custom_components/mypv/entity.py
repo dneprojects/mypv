@@ -39,3 +39,13 @@ class MpvEntity(CoordinatorEntity[MypvCommunicator]):
             manufacturer="my-PV GmbH",
             model=device.model,
         )
+
+    async def async_added_to_hass(self) -> None:
+        """Populate the initial state from the already fetched data.
+
+        The coordinator's first refresh happens before the entities are
+        added, so without this the ``_attr_*`` based entities would stay
+        ``unknown`` until the next update interval.
+        """
+        await super().async_added_to_hass()
+        self._handle_coordinator_update()

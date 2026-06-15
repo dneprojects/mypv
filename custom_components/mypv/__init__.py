@@ -95,6 +95,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             f"Error connecting to myPV device at {entry.data[DEV_IP]}"
         ) from ex
 
+    if not comm.devices:
+        raise ConfigEntryNotReady(f"No myPV device responded at {entry.data[DEV_IP]}")
+
     await comm.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {COMM_HUB: comm}
@@ -117,6 +120,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
+        hass.data[DOMAIN].pop(entry.entry_id, None)
 
     return unload_ok
