@@ -1,9 +1,13 @@
 """Tests for the myPV entities and their states."""
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
+from custom_components.mypv.const import CONF_HOSTS, DEV_IP, DOMAIN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+
+from .const import MOCK_IP, MOCK_SERIAL
 
 PREFIX = "ac_elwa_2_123456"
 
@@ -47,6 +51,35 @@ async def test_control_entities(
     relais = hass.states.get(f"binary_sensor.{PREFIX}_relais")
     assert relais is not None
     assert relais.state == "on"  # rel1_out 1
+
+
+async def test_energy_sensor_name_is_translated(
+    hass: HomeAssistant,
+    mock_device: AiohttpClientMocker,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    """Energy sensors resolve their name via translation_key, not _attr_name.
+
+    IntegrationSensor sets an explicit name; unless it is removed Home
+    Assistant skips the translation and the name stays English.
+    """
+    hass.config.language = "de"
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=f"mypv_{MOCK_IP}",
+        data={DEV_IP: MOCK_IP, CONF_HOSTS: [MOCK_IP]},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    entity_id = entity_registry.async_get_entity_id(
+        "sensor", DOMAIN, f"{MOCK_SERIAL}_Energy consumption"
+    )
+    assert entity_id is not None
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.attributes["friendly_name"] == "AC ELWA 2 123456 Energieverbrauch"
 
 
 async def test_diagnostic_sensors_disabled_by_default(

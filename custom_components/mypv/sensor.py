@@ -300,6 +300,11 @@ class MpvEnergySensor(IntegrationSensor, MpvSensor):
             max_sub_interval=timedelta(seconds=10),
         )
         MpvSensor.__init__(self, device, key, info)
+        # IntegrationSensor.__init__ sets an explicit _attr_name. As long as
+        # _attr_name exists (even as None) Home Assistant skips the
+        # translation_key, so remove it entirely to get the translated name
+        # like every other entity.
+        del self._attr_name
 
     @property
     def native_value(self) -> Decimal:
