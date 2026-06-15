@@ -6,10 +6,11 @@ import logging
 import aiohttp
 
 from homeassistant import config_entries
-from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.device_registry import DeviceEntry
 from homeassistant.helpers.service import async_extract_entity_ids
 from homeassistant.helpers.typing import ConfigType
@@ -19,6 +20,8 @@ from .const import COMM_HUB, DEV_IP, DOMAIN
 from .discovery import async_discover_mypv_devices
 
 _LOGGER = logging.getLogger(__name__)
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 SERVICE_RESET_ENERGY = "reset_energy_sensor"
 
@@ -57,14 +60,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     # Launch the discovery task without blocking HA startup
     hass.async_create_background_task(_async_run_discovery(), "mypv-discovery")
 
-    if DOMAIN not in config:
-        return True
-
-    hass.async_create_task(
-        hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": SOURCE_IMPORT}, data=dict(config[DOMAIN])
-        )
-    )
     return True
 
 
