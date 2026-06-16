@@ -1,5 +1,10 @@
 # Latest changes
 
+## v1.4.3
+
+### Bug fixes
+- Device data and setup are fetched sequentially again; concurrent requests overwhelmed the single-connection myPV web server, flipping entities to "unknown" and breaking setup (regression since v1.3.3).
+
 ## v1.4.2
 
 ### Bug fixes
