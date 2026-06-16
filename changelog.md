@@ -1,5 +1,10 @@
 # Latest changes
 
+## v1.4.4
+
+### Bug fixes
+- All device requests are serialized; a command (e.g. set power) overlapping the cyclic poll no longer fails with "Connect call failed" (the device serves one connection at a time).
+
 ## v1.4.3
 
 ### Bug fixes
