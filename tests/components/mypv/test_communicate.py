@@ -1,6 +1,7 @@
 """Tests for the myPV communicator error handling."""
 
 import asyncio
+from typing import Self
 
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -79,6 +80,54 @@ async def test_update_fetches_endpoints_sequentially(
     monkeypatch.setattr(comm, "state_update", _tracked_state)
 
     await device.update()
+
+    assert max_active == 1
+
+
+async def test_device_io_is_serialized(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """All device HTTP I/O is serialized: the device allows one connection.
+
+    A user command (e.g. set_power) overlapping the cyclic poll otherwise opens
+    a second connection, which the device refuses ("Connect call failed" on :80).
+    """
+    comm, _ = _comm_device(hass, setup_integration)
+
+    active = 0
+    max_active = 0
+
+    class _Resp:
+        async def __aenter__(self) -> Self:
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            await asyncio.sleep(0)  # yield so any overlap becomes observable
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            nonlocal active
+            active -= 1
+
+        async def text(self) -> str:
+            return "OK"
+
+    class _Session:
+        def get(self, url: str, timeout: object = None) -> _Resp:
+            return _Resp()
+
+    monkeypatch.setattr(
+        "custom_components.mypv.communicate.async_get_clientsession",
+        lambda hass: _Session(),
+    )
+
+    await asyncio.gather(
+        comm.do_get_request("http://x/a"),
+        comm.do_get_request("http://x/b"),
+        comm.do_get_request("http://x/c"),
+    )
 
     assert max_active == 1
 

@@ -1,5 +1,6 @@
 """Provides the myPV DataUpdateCoordinator."""
 
+import asyncio
 from datetime import timedelta
 import json
 import logging
@@ -31,6 +32,10 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
         """Initialize data updater."""
         self.hosts: list[str] = entry.data[CONF_HOSTS]
         self.devices: list[MpyDevice] = []
+        # myPV devices serve only one HTTP connection at a time; serialize all
+        # requests (cyclic poll + user commands) so they never collide, which
+        # otherwise shows up as "Connect call failed" on :80.
+        self._io_lock = asyncio.Lock()
         super().__init__(
             hass,
             _LOGGER,
@@ -60,9 +65,9 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
             raise UpdateFailed(f"Error communicating with myPV device: {err}") from err
 
     async def do_get_request(self, url: str) -> str:
-        """Perform asyncio get request using the shared HA session."""
+        """Perform a GET request, serialized so the device sees one at a time."""
         session = async_get_clientsession(self.hass)
-        async with session.get(url, timeout=REQUEST_TIMEOUT) as resp:
+        async with self._io_lock, session.get(url, timeout=REQUEST_TIMEOUT) as resp:
             return await resp.text()
 
     async def check_ip(self, ip: str) -> dict[str, Any] | None:
