@@ -1,6 +1,5 @@
 """myPV device model."""
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -84,9 +83,10 @@ class MpyDevice:
 
     async def initialize(self) -> None:
         """Get setup information, find sensors."""
-        self.setup, self.data = await asyncio.gather(
-            self.comm.setup_update(self), self.comm.data_update(self)
-        )
+        # Fetch sequentially: the myPV web server serves one connection at a
+        # time, so concurrent requests collide and make setup look unreachable.
+        self.setup = await self.comm.setup_update(self)
+        self.data = await self.comm.data_update(self)
         dr.async_get(self._hass).async_get_or_create(
             config_entry_id=self._entry.entry_id,
             identifiers={(DOMAIN, self.serial_number)},
@@ -230,9 +230,11 @@ class MpyDevice:
         """Update all sensors."""
         for en_sensor in self.energy_sensors:
             await en_sensor.async_update()
-        self.data, self.setup = await asyncio.gather(
-            self.comm.data_update(self), self.comm.setup_update(self)
-        )
+        # Fetch sequentially: the myPV web server serves one connection at a
+        # time, so concurrent requests collide and time out — which would flip
+        # every entity to "unknown" on each failing cycle.
+        self.data = await self.comm.data_update(self)
+        self.setup = await self.comm.setup_update(self)
         if self.control_enabled and await self.comm.state_update(self):
             if "State" in self.state_dict:
                 self.state = int(self.state_dict["State"])

@@ -1,5 +1,8 @@
 """Tests for the myPV communicator error handling."""
 
+import asyncio
+
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
@@ -36,6 +39,48 @@ async def test_commands_return_false_on_error(
     assert await comm.set_pid_power(device, 1000) is False
     assert await comm.switch(device, "devmode", True) is False
     assert await comm.activate_boost(device, 1) is False
+
+
+async def test_update_fetches_endpoints_sequentially(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """update() must hit the single-connection device one request at a time.
+
+    The myPV web server serves only one connection; fetching data/setup/state
+    concurrently makes requests collide and time out. Guard against a regression
+    that re-introduces concurrent fetching.
+    """
+    comm, device = _comm_device(hass, setup_integration)
+    device.energy_sensors = []  # isolate the test to the HTTP fetches
+
+    active = 0
+    max_active = 0
+
+    async def _tracked_dict(*args: object, **kwargs: object) -> dict:
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        await asyncio.sleep(0)  # yield so any overlap becomes observable
+        active -= 1
+        return {}
+
+    async def _tracked_state(*args: object, **kwargs: object) -> bool:
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        await asyncio.sleep(0)
+        active -= 1
+        return True
+
+    monkeypatch.setattr(comm, "data_update", _tracked_dict)
+    monkeypatch.setattr(comm, "setup_update", _tracked_dict)
+    monkeypatch.setattr(comm, "state_update", _tracked_state)
+
+    await device.update()
+
+    assert max_active == 1
 
 
 async def test_state_update_failure_disables_control(
