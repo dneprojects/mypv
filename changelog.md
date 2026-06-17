@@ -1,5 +1,10 @@
 # Latest changes
 
+## v1.4.5
+
+### Bug fixes
+- Numeric sensors without a unit (e.g. meter power sums) keep their measurement state class again, so long-term statistics are tracked instead of triggering "no longer has a state class" warnings. Non-numeric sensors (versions, IPs, status) correctly have none — delete their orphaned statistics via the repair dialog.
+
 ## v1.4.4
 
 ### Bug fixes
