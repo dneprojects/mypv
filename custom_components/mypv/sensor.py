@@ -147,10 +147,15 @@ class MpvSensor(MpvEntity, SensorEntity):
         self._attr_device_class = (
             _DEVICE_CLASS_BY_UNIT.get(info.unit) if info.unit else None
         )
-        # Only sensors with a unit are guaranteed numeric; everything else
-        # (text, versions, string enums like "Control source") must not carry
-        # a measurement state class or HA rejects their non-numeric value.
-        if info.unit is None:
+        # Keep MEASUREMENT for numeric readings (including unitless ones like
+        # meter power sums), but drop it for non-numeric values (versions, IPs,
+        # status text): HA rejects a measurement with a non-numeric value and
+        # would record meaningless long-term statistics for it.
+        sample = device.data.get(key)
+        if sample is None:
+            sample = device.setup.get(key)
+        is_numeric = isinstance(sample, (int, float)) and not isinstance(sample, bool)
+        if info.unit is None and not is_numeric:
             self._attr_state_class = None
         if (
             key.split("_", maxsplit=1)[0] in ("power1", "power2", "power3")

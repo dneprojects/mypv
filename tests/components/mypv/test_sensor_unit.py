@@ -2,7 +2,9 @@
 
 from datetime import UTC, datetime
 from typing import Any
+from unittest.mock import MagicMock
 
+from custom_components.mypv.const import MpvDescription
 from custom_components.mypv.sensor import (
     UPDATE_STATE_ENUM,
     MpvEnergyDailySensor,
@@ -12,8 +14,48 @@ from custom_components.mypv.sensor import (
     MpvSensor,
     MpvUpdateSensor,
 )
-from homeassistant.const import UnitOfFrequency
+from homeassistant.components.sensor import SensorStateClass
+from homeassistant.const import UnitOfFrequency, UnitOfPower
 from homeassistant.util import slugify
+
+
+def _full_device(
+    data: dict[str, Any], setup: dict[str, Any] | None = None
+) -> MagicMock:
+    """A device stub complete enough to run MpvSensor.__init__."""
+    dev = MagicMock()
+    dev.comm = MagicMock()
+    dev.serial_number = "SN1"
+    dev.name = "AC ELWA 2"
+    dev.model = "AC ELWA 2"
+    dev.data = data
+    dev.setup = setup or {}
+    return dev
+
+
+def test_numeric_unitless_sensor_keeps_measurement() -> None:
+    """A numeric reading without a unit (e.g. meter sum) keeps MEASUREMENT."""
+    dev = _full_device({"m0sum": 1234})
+    sensor = MpvSensor(dev, "m0sum", MpvDescription("Meter 0 sum", None, "sensor"))
+    assert sensor.state_class is SensorStateClass.MEASUREMENT
+
+
+def test_string_unitless_sensor_has_no_state_class() -> None:
+    """A non-numeric value (firmware version) must not carry a state class."""
+    dev = _full_device({"psversion": "a0021700"})
+    sensor = MpvSensor(
+        dev, "psversion", MpvDescription("Power Unit Fw Version", None, "version")
+    )
+    assert sensor.state_class is None
+
+
+def test_unit_sensor_keeps_measurement() -> None:
+    """A sensor with a unit keeps MEASUREMENT regardless of the cached value."""
+    dev = _full_device({"power_solar": 500})
+    sensor = MpvSensor(
+        dev, "power_solar", MpvDescription("Solar power", UnitOfPower.WATT, "sensor")
+    )
+    assert sensor.state_class is SensorStateClass.MEASUREMENT
 
 
 class _Dev:
