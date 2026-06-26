@@ -3,6 +3,9 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.4.6
+- Fixed the control state sensor showing wrong states (e.g. `boost_heat` at target temperature, with boost off).
+
 ## v1.4.5
 - Fixed long-term statistics for numeric sensors (measurement state class restored).
 

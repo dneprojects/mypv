@@ -4,6 +4,11 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.4.6
+
+### Bug fixes
+- `control_state` sensor (`MpvDevStatSensor`) decoded the device state wrongly (#42): `control.html`'s `State` field is the myPV **operation-state** code (`0` Standby, `1` Heat, `2` Boost heat, `3` Heat finished, `4` No control — confirmed against live AC-ELWA-2 captures and the AC-THOR Controls doc), but `DEV_STATE_ENUM` was built from the different "status codes" table **and** read with a `+ 1` offset. Net effect: every state except `Heat` was scrambled (e.g. `State=3` "target reached" showed `boost_heat`). Fixed by re-keying `DEV_STATE_ENUM`/`DEV_STATE_ENUM_SOLTHOR` to the raw operation-state codes and indexing them directly (no offset); missing `State` now keeps the last value. Affects all devices, not just one model. The `>=200` power-stage error codes and the `20/21/22` (SolThor `21/22/23`) Legionella/disabled/blocked entries are kept best-effort and still need device verification.
+
 ## v1.4.5
 
 ### Bug fixes
