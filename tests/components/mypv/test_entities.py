@@ -21,10 +21,11 @@ async def test_sensor_states(
     assert temp is not None
     assert temp.state == "45.2"
 
-    # Device state enum: control.html State=2 -> enum index 3 -> "standby".
+    # Device state enum: control.html State=2 -> "boost_heat" (the raw myPV
+    # operation-state value indexes the enum directly; 2 = boost backup).
     control_state = hass.states.get(f"sensor.{PREFIX}_control_state")
     assert control_state is not None
-    assert control_state.state == "standby"
+    assert control_state.state == "boost_heat"
 
     # Non-numeric sensor no longer raises; it keeps its raw string value.
     control_source = hass.states.get(f"sensor.{PREFIX}_control_source")

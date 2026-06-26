@@ -67,27 +67,36 @@ _DIAGNOSTIC_DISABLED_KEYS = frozenset(
     }
 )
 
-# Device state enums, keyed by the raw device value. The values are translated
-# through the entity ``state`` translations (keyed by the slugified value).
+# Device state enums, keyed by the raw ``control.html`` "State" value (the myPV
+# operation-state / screen-icon code). Values 0-4 are confirmed against live
+# AC-ELWA-2 device captures (State=1 heats, State=2 boosts, State=4 no control)
+# and the my-PV AC-THOR "Documentation Controls" Footnote 3; State=3 is "set
+# temperature reached". The raw value indexes this dict directly (no offset).
+#
+# NOTE: the ``>=200`` power-stage error codes are category-confirmed (the docs
+# say ">=200 = power stage error states") but the individual labels, plus the
+# 20/21/22 Legionella/disabled/blocked entries, come from the my-PV "status
+# codes" list and are NOT yet verified to appear in this field — best-effort,
+# verify on a device / via my-PV support.
 DEV_STATE_ENUM_SOLTHOR: dict[int, str] = {
-    0: "State not available",
-    1: "No control",
-    2: "Heat",
-    3: "Standby",
-    4: "Boost heat",
-    5: "Heat finished",
+    0: "Standby",
+    1: "Heat",
+    2: "Boost heat",
+    3: "Heat finished",
+    4: "No control",
+    # SolThor (DC) specials below are unverified for this field:
     7: "Startup DC-heating",
     21: "Legionella-Boost active",
     22: "Device disabled",
     23: "Device blocked",
 }
 DEV_STATE_ENUM: dict[int, str] = {
-    0: "State not available",
-    1: "No control",
-    2: "Heat",
-    3: "Standby",
-    4: "Boost heat",
-    5: "Heat finished",
+    0: "Standby",
+    1: "Heat",
+    2: "Boost heat",
+    3: "Heat finished",
+    4: "No control",
+    # Best-effort / unverified for this field:
     20: "Legionella-Boost active",
     21: "Device disabled",
     22: "Device blocked",
@@ -240,7 +249,10 @@ class MpvDevStatSensor(MpvSensor):
     def __init__(self, device: MpyDevice, key: str, info: MpvDescription) -> None:
         """Initialize the sensor."""
         super().__init__(device, key, info)
-        self._last_value = 1
+        # -1 = no valid reading yet (and the value used when "State" is missing);
+        # it is not in the enum, so native_value reports "unknown" until a real
+        # state arrives.
+        self._last_value = -1
         self._enum = (
             DEV_STATE_ENUM_SOLTHOR if device.model == "Solthor" else DEV_STATE_ENUM
         )
@@ -251,8 +263,11 @@ class MpvDevStatSensor(MpvSensor):
     @property
     def native_value(self) -> str | None:
         """Return the state of the device."""
-        if self.device.state is not None:
-            self._last_value = self.device.state + 1
+        # device.state is the raw control.html "State" value and indexes the
+        # enum directly. It is -1 when the device did not report a state; keep
+        # the last known value in that case.
+        if self.device.state is not None and self.device.state >= 0:
+            self._last_value = self.device.state
         display = self._enum.get(self._last_value)
         return slugify(display) if display is not None else None
 
