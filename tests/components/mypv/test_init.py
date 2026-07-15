@@ -3,7 +3,6 @@
 from unittest.mock import AsyncMock, patch
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 from custom_components.mypv import async_remove_config_entry_device
 from custom_components.mypv.const import COMM_HUB, DOMAIN
@@ -13,7 +12,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.setup import async_setup_component
 
-from .const import MOCK_IP, MYPV_DEV_JSN
+from .conftest import FakeWorld
+from .const import MOCK_IP
 from .test_entities import PREFIX
 
 
@@ -32,10 +32,10 @@ async def test_setup_and_unload(
 async def test_setup_cannot_connect(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
-    aioclient_mock: AiohttpClientMocker,
+    mock_device: FakeWorld,
 ) -> None:
     """An unreachable device results in a setup retry."""
-    aioclient_mock.get(f"http://{MOCK_IP}/mypv_dev.jsn", exc=TimeoutError())
+    mock_device.spec().reachable = False
     mock_config_entry.add_to_hass(hass)
 
     assert not await hass.config_entries.async_setup(mock_config_entry.entry_id)
@@ -46,12 +46,11 @@ async def test_setup_cannot_connect(
 async def test_setup_data_unreadable(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
-    aioclient_mock: AiohttpClientMocker,
+    mock_device: FakeWorld,
 ) -> None:
     """A device that answers identification but not data triggers a retry."""
-    aioclient_mock.get(f"http://{MOCK_IP}/mypv_dev.jsn", json=MYPV_DEV_JSN)
-    aioclient_mock.get(f"http://{MOCK_IP}/setup.jsn", exc=TimeoutError())
-    aioclient_mock.get(f"http://{MOCK_IP}/data.jsn", exc=TimeoutError())
+    # Identification (open/mypv_dev) succeeds; the data fetch then fails.
+    mock_device.spec().error = TimeoutError()
     mock_config_entry.add_to_hass(hass)
 
     assert not await hass.config_entries.async_setup(mock_config_entry.entry_id)
@@ -59,19 +58,38 @@ async def test_setup_data_unreadable(
     assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
 
 
+async def test_setup_auth_required_starts_reauth(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_device: FakeWorld,
+) -> None:
+    """A device that demands a password (with none stored) starts reauth on setup."""
+    spec = mock_device.spec()
+    spec.needs_auth = True
+    spec.password = "secret"  # the stored entry has no password at all
+    mock_config_entry.add_to_hass(hass)
+
+    assert not await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert mock_config_entry.state is ConfigEntryState.SETUP_ERROR
+    assert any(
+        flow["context"]["source"] == "reauth"
+        for flow in hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    )
+
+
 async def test_coordinator_update_failure(
     hass: HomeAssistant,
     setup_integration: MockConfigEntry,
-    aioclient_mock: AiohttpClientMocker,
+    mock_device: FakeWorld,
 ) -> None:
     """A failed refresh marks the coordinator update as unsuccessful."""
     entry = setup_integration
     comm = hass.data[DOMAIN][entry.entry_id][COMM_HUB]
     assert comm.last_update_success
 
-    aioclient_mock.clear_requests()
-    aioclient_mock.get(f"http://{MOCK_IP}/data.jsn", exc=TimeoutError())
-    aioclient_mock.get(f"http://{MOCK_IP}/setup.jsn", exc=TimeoutError())
+    mock_device.spec().error = TimeoutError()
 
     await comm.async_refresh()
     await hass.async_block_till_done()
@@ -79,7 +97,7 @@ async def test_coordinator_update_failure(
 
 
 async def test_async_setup_discovery_creates_flow(
-    hass: HomeAssistant, mock_device: AiohttpClientMocker
+    hass: HomeAssistant, mock_device: FakeWorld
 ) -> None:
     """The background discovery starts a config flow for each device found."""
     with patch(

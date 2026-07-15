@@ -1,18 +1,17 @@
 """Tests for the myPV communicator error handling."""
 
 import asyncio
-from typing import Self
 
+from my_pv.exceptions import MyPVAuthenticationError
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 from custom_components.mypv.communicate import MypvCommunicator
 from custom_components.mypv.const import COMM_HUB, DOMAIN
 from custom_components.mypv.mypv_device import MpyDevice
 from homeassistant.core import HomeAssistant
 
-from .const import MOCK_IP
+from .conftest import FakeWorld
 
 
 def _comm_device(
@@ -22,17 +21,23 @@ def _comm_device(
     return comm, comm.devices[0]
 
 
+def _reauth_started(hass: HomeAssistant) -> bool:
+    """Return True if a reauth flow is in progress for the myPV integration."""
+    return any(
+        flow["context"]["source"] == "reauth"
+        for flow in hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    )
+
+
 async def test_commands_return_false_on_error(
     hass: HomeAssistant,
     setup_integration: MockConfigEntry,
-    aioclient_mock: AiohttpClientMocker,
+    mock_device: FakeWorld,
 ) -> None:
     """Every device command returns False (and does not raise) on failure."""
     comm, device = _comm_device(hass, setup_integration)
 
-    aioclient_mock.clear_requests()
-    for path in ("setup.jsn", "control.html", "data.jsn"):
-        aioclient_mock.get(f"http://{MOCK_IP}/{path}", exc=TimeoutError())
+    mock_device.spec().error = TimeoutError()
 
     assert await comm.set_number(device, "ww1target", 500) is False
     assert await comm.set_power(device, 1000) is False
@@ -84,65 +89,16 @@ async def test_update_fetches_endpoints_sequentially(
     assert max_active == 1
 
 
-async def test_device_io_is_serialized(
-    hass: HomeAssistant,
-    setup_integration: MockConfigEntry,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """All device HTTP I/O is serialized: the device allows one connection.
-
-    A user command (e.g. set_power) overlapping the cyclic poll otherwise opens
-    a second connection, which the device refuses ("Connect call failed" on :80).
-    """
-    comm, _ = _comm_device(hass, setup_integration)
-
-    active = 0
-    max_active = 0
-
-    class _Resp:
-        async def __aenter__(self) -> Self:
-            nonlocal active, max_active
-            active += 1
-            max_active = max(max_active, active)
-            await asyncio.sleep(0)  # yield so any overlap becomes observable
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            nonlocal active
-            active -= 1
-
-        async def text(self) -> str:
-            return "OK"
-
-    class _Session:
-        def get(self, url: str, timeout: object = None) -> _Resp:
-            return _Resp()
-
-    monkeypatch.setattr(
-        "custom_components.mypv.communicate.async_get_clientsession",
-        lambda hass: _Session(),
-    )
-
-    await asyncio.gather(
-        comm.do_get_request("http://x/a"),
-        comm.do_get_request("http://x/b"),
-        comm.do_get_request("http://x/c"),
-    )
-
-    assert max_active == 1
-
-
 async def test_state_update_failure_disables_control(
     hass: HomeAssistant,
     setup_integration: MockConfigEntry,
-    aioclient_mock: AiohttpClientMocker,
+    mock_device: FakeWorld,
 ) -> None:
     """A failing control read disables control mode and returns False."""
     comm, device = _comm_device(hass, setup_integration)
     assert device.control_enabled is True
 
-    aioclient_mock.clear_requests()
-    aioclient_mock.get(f"http://{MOCK_IP}/control.html", exc=TimeoutError())
+    mock_device.spec().error = TimeoutError()
 
     assert await comm.state_update(device) is False
     assert device.control_enabled is False
@@ -151,15 +107,43 @@ async def test_state_update_failure_disables_control(
     assert await comm.state_update(device) is False
 
 
-async def test_check_ip_returns_none_on_error(
+async def test_command_auth_error_starts_reauth(
     hass: HomeAssistant,
     setup_integration: MockConfigEntry,
-    aioclient_mock: AiohttpClientMocker,
+    mock_device: FakeWorld,
 ) -> None:
-    """check_ip returns None when the device cannot be reached."""
+    """Every command that hits a 401 returns False and starts a reauth flow."""
+    comm, device = _comm_device(hass, setup_integration)
+
+    mock_device.spec().error = MyPVAuthenticationError()
+
+    commands = [
+        comm.set_number(device, "ww1target", 500),
+        comm.set_power(device, 1000),
+        comm.set_control_mode(device, 1),
+        comm.set_pid_power(device, 1000),
+        comm.switch(device, "devmode", True),
+        comm.activate_boost(device, 1),
+    ]
+    for command in commands:
+        assert await command is False
+
+    await hass.async_block_till_done()
+    assert _reauth_started(hass)
+
+
+async def test_poll_auth_error_starts_reauth(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    mock_device: FakeWorld,
+) -> None:
+    """An auth failure during the cyclic poll fails the update and starts reauth."""
     comm, _ = _comm_device(hass, setup_integration)
 
-    aioclient_mock.clear_requests()
-    aioclient_mock.get(f"http://{MOCK_IP}/mypv_dev.jsn", exc=TimeoutError())
+    mock_device.spec().error = MyPVAuthenticationError()
 
-    assert await comm.check_ip(MOCK_IP) is None
+    await comm.async_refresh()
+    await hass.async_block_till_done()
+
+    assert comm.last_update_success is False
+    assert _reauth_started(hass)

@@ -1,12 +1,12 @@
 """Tests for the myPV entities and their states."""
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 from custom_components.mypv.const import CONF_HOSTS, DEV_IP, DOMAIN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
+from .conftest import FakeWorld
 from .const import MOCK_IP, MOCK_SERIAL
 
 PREFIX = "ac_elwa_2_123456"
@@ -56,7 +56,7 @@ async def test_control_entities(
 
 async def test_energy_sensor_name_is_translated(
     hass: HomeAssistant,
-    mock_device: AiohttpClientMocker,
+    mock_device: FakeWorld,
     entity_registry: er.EntityRegistry,
 ) -> None:
     """Energy sensors resolve their name via translation_key, not _attr_name.

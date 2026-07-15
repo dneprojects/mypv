@@ -11,7 +11,7 @@ from homeassistant.const import CONF_PASSWORD
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 
-from .connection import MypvHttpConnection, MypvHttpsConnection
+from .connection import create_connection
 from .const import CONF_HOSTS, DEV_IP, DOMAIN
 from .discovery import async_discover_mypv_devices
 
@@ -56,7 +56,7 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         ``auth_required`` is True when the device is reachable but its firmware
         requires a password (it redirects to HTTPS authentication).
         """
-        connection = MypvHttpConnection(dev_ip)
+        connection = create_connection(dev_ip, None)
         try:
             opened = await connection.open()
         except MyPVAuthenticationError:
@@ -73,7 +73,7 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def _verify_password(self, dev_ip: str, password: str) -> tuple[bool, str]:
         """Verify a password against the device. Returns ``(ok, device_name)``."""
-        connection = MypvHttpsConnection(dev_ip, password)
+        connection = create_connection(dev_ip, password)
         try:
             opened = await connection.open()
         except MyPVAuthenticationError:

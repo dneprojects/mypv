@@ -107,18 +107,6 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
         ) as err:
             raise UpdateFailed(f"Error communicating with myPV device: {err}") from err
 
-    async def check_ip(self, ip: str) -> dict[str, Any] | None:
-        """Return device info for a host, or None if not reachable."""
-        connection = create_connection(ip, self.password)
-        try:
-            opened = await connection.open()
-        except MyPVAuthenticationError:
-            await connection.close()
-            return None
-        info = connection.mypv_dev if opened else None
-        await connection.close()
-        return info
-
     async def data_update(self, device: MpyDevice) -> dict[str, Any]:
         """Update device data info."""
         return await self._connection(device).get_json("/data.jsn")
@@ -148,6 +136,7 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
         themselves (a no-op if a reauth flow is already in progress).
         """
         self.logger.warning("Authentication with myPV device failed: %s", err)
+        assert self.config_entry is not None
         self.config_entry.async_start_reauth(self.hass)
 
     async def set_number(self, device: MpyDevice, key: str, act_val: int) -> bool:

@@ -6,12 +6,12 @@ from typing import Any
 
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 from custom_components.mypv.const import CONF_HOSTS, DEV_IP, DOMAIN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
+from .conftest import DeviceSpec, FakeWorld
 from .const import (
     CONTROL_HTML,
     DATA_9S,
@@ -40,17 +40,21 @@ MODELS = [
 @pytest.mark.parametrize(("dev", "data", "setup"), MODELS)
 async def test_translation_coverage(
     hass: HomeAssistant,
-    aioclient_mock: AiohttpClientMocker,
+    mock_device: FakeWorld,
     entity_registry: er.EntityRegistry,
     dev: dict[str, Any],
     data: dict[str, Any],
     setup: dict[str, Any],
 ) -> None:
     """Every created entity has a name (and states) defined in strings.json."""
-    aioclient_mock.get(f"http://{MOCK_IP}/mypv_dev.jsn", json=dev)
-    aioclient_mock.get(f"http://{MOCK_IP}/data.jsn", json=data)
-    aioclient_mock.get(f"http://{MOCK_IP}/setup.jsn", json=setup)
-    aioclient_mock.get(f"http://{MOCK_IP}/control.html?", text=CONTROL_HTML)
+    mock_device.add(
+        MOCK_IP,
+        DeviceSpec(
+            dev=dev,
+            json={"/data.jsn": data, "/setup.jsn": setup},
+            text={"/control.html": CONTROL_HTML},
+        ),
+    )
 
     entry = MockConfigEntry(
         domain=DOMAIN,
