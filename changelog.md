@@ -5,7 +5,7 @@ User-facing release notes. For the detailed technical changelog see
 
 ## v1.5.0
 - Device communication now runs through the official my-pv library (entities and power control unchanged).
-- Added password authentication for newer myPV firmware; the setup asks for it only when the device requires it, with re-authentication support.
+- **Experimental:** password authentication for newer HTTPS firmware (e.g. `e0002410`) — setup asks for it only when the device requires it, with re-authentication support. This path is new; if you run auth firmware, please report any issues.
 
 ## v1.4.6
 - Fixed the control state sensor showing wrong states (e.g. `boost_heat` at target temperature, with boost off).
