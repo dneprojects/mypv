@@ -13,15 +13,20 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
-from my_pv.exceptions import MyPVAuthenticationError, MyPVConnectionError
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_PASSWORD
+from homeassistant.const import CONF_PASSWORD, CONF_SSL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .connection import MypvHttpConnection, MypvHttpsConnection, create_connection
+from .connection import (
+    MyPVAuthenticationError,
+    MyPVConnectionError,
+    MypvHttpConnection,
+    MypvHttpsConnection,
+    create_connection,
+)
 from .const import CONF_HOSTS, DOMAIN
 
 if TYPE_CHECKING:
@@ -44,6 +49,9 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
         """Initialize data updater."""
         self.hosts: list[str] = entry.data[CONF_HOSTS]
         self.password: str | None = entry.data.get(CONF_PASSWORD)
+        # New firmware speaks HTTPS (self-signed) even without a password
+        # (encryption modes 1/2); a password additionally implies HTTPS.
+        self.use_https: bool = entry.data.get(CONF_SSL, False)
         self.devices: list[MpyDevice] = []
         # One library-backed connection per device; each handles its own session
         # and authentication and serialises the device's requests internally.
@@ -62,7 +70,9 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
         from .mypv_device import MpyDevice  # noqa: PLC0415
 
         for ip_str in self.hosts:
-            connection = create_connection(ip_str, self.password)
+            connection = create_connection(
+                ip_str, self.password, use_https=self.use_https
+            )
             try:
                 opened = await connection.open()
             except MyPVAuthenticationError as err:

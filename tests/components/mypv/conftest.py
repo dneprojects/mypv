@@ -16,10 +16,13 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 from urllib.parse import urlencode
 
-from my_pv.exceptions import MyPVAuthenticationError
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.mypv.connection import (
+    MyPVAuthenticationError,
+    MyPVConnectionError,
+)
 from custom_components.mypv.const import CONF_HOSTS, DEV_IP, DOMAIN
 from homeassistant.core import HomeAssistant
 
@@ -34,6 +37,15 @@ class DeviceSpec:
     json: dict[str, dict[str, Any]] = field(default_factory=dict)
     text: dict[str, str] = field(default_factory=dict)
     reachable: bool = True
+    # Protected reads (setup.jsn/data.jsn) are served over plain HTTP. True for
+    # old firmware and encryption modes 0/1; False in mode 2 (HTTP is redirected
+    # to HTTPS). ``mypv_dev.jsn`` stays plain-HTTP in every mode regardless.
+    http_reads_open: bool = True
+    https: bool = False  # device serves HTTPS (new firmware, any encryption mode)
+    # setup.jsn's encryption level (0 HTTP / 1 HTTPS / 2 HTTPS+password). None
+    # models old firmware without the field; when set it is injected into the
+    # setup.jsn payload (drives both detection and the encryption sensor).
+    sec_level: int | None = None
     needs_auth: bool = False
     password: str | None = None
     # When set, every get_json/get_text raises this (the device answers
@@ -49,11 +61,20 @@ class FakeConnection:
     by ``connection._RawAccessMixin``.
     """
 
-    def __init__(self, host: str, password: str | None, world: FakeWorld) -> None:
+    def __init__(
+        self,
+        host: str,
+        password: str | None,
+        world: FakeWorld,
+        *,
+        use_https: bool = False,
+    ) -> None:
         """Register the connection with its world and start closed."""
         self._host = host
         self._password = password
         self._world = world
+        # create_connection() picks HTTPS when use_https or a password is set.
+        self._is_https = use_https or password is not None
         self._open = False
         self.requests: list[tuple[str, dict[str, Any]]] = []
         self.closed = False
@@ -68,8 +89,22 @@ class FakeConnection:
         spec = self._spec
         if spec is None or not spec.reachable:
             return False
-        if spec.needs_auth and self._password != spec.password:
-            raise MyPVAuthenticationError
+        if self._is_https:
+            if not spec.https:
+                return False  # no HTTPS server (old firmware)
+            # A password is only checked when one is supplied (mode-2 verify);
+            # password-less HTTPS reads stay open in every mode.
+            if (
+                self._password is not None
+                and spec.needs_auth
+                and self._password != spec.password
+            ):
+                raise MyPVAuthenticationError
+            self._open = True
+            return True
+        # Plain HTTP: mypv_dev.jsn (opened here) is served in every mode, so a
+        # reachable device always opens over HTTP. Protected reads may still be
+        # redirected (mode 2) -- that surfaces in get_json, not here.
         self._open = True
         return True
 
@@ -93,8 +128,21 @@ class FakeConnection:
         self, path: str, query: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """Record the request and return the canned JSON payload for ``path``."""
+        spec = self._spec
+        # Encryption mode 2 redirects protected reads over plain HTTP to HTTPS;
+        # the plain-HTTP probe fails. mypv_dev.jsn stays open in every mode.
+        if (
+            not self._is_https
+            and spec is not None
+            and not spec.http_reads_open
+            and path != "/mypv_dev.jsn"
+        ):
+            raise MyPVConnectionError
         self._record(path, query)
-        return self._spec.json[path]
+        payload = self._spec.json[path]
+        if path == "/setup.jsn" and spec is not None and spec.sec_level is not None:
+            payload = {**payload, "sec_level": spec.sec_level}
+        return payload
 
     async def get_text(self, path: str, query: dict[str, Any] | None = None) -> str:
         """Record the request and return the canned text body for ``path``."""
@@ -133,9 +181,11 @@ class FakeWorld:
         """Return the mutable spec for ``ip`` (defaults to the seeded device)."""
         return self.devices[ip]
 
-    def make(self, host: str, password: str | None) -> FakeConnection:
+    def make(
+        self, host: str, password: str | None = None, *, use_https: bool = False
+    ) -> FakeConnection:
         """``create_connection`` stand-in."""
-        return FakeConnection(host, password, self)
+        return FakeConnection(host, password, self, use_https=use_https)
 
     @property
     def requested(self) -> list[str]:

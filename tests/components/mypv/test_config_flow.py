@@ -6,7 +6,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.mypv.const import CONF_HOSTS, DEV_IP, DOMAIN
 from homeassistant.config_entries import SOURCE_DHCP, SOURCE_DISCOVERY, SOURCE_USER
-from homeassistant.const import CONF_PASSWORD
+from homeassistant.const import CONF_PASSWORD, CONF_SSL
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
@@ -37,6 +37,32 @@ async def test_user_flow_success(
     assert result["data"] == {DEV_IP: MOCK_IP, CONF_HOSTS: [MOCK_IP]}
     assert result["result"].unique_id == f"mypv_{MOCK_IP}"
     assert len(mock_setup_entry.mock_calls) == 1
+
+
+async def test_user_flow_https_no_password(
+    hass: HomeAssistant,
+    mock_device: FakeWorld,
+    mock_setup_entry: AsyncMock,
+) -> None:
+    """A HTTPS-without-password device (encryption mode 1) stores the ssl flag."""
+    spec = mock_device.spec()
+    spec.https = True  # new firmware serves HTTPS, no password
+    spec.sec_level = 1  # encryption mode 1
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {DEV_IP: MOCK_IP}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {
+        DEV_IP: MOCK_IP,
+        CONF_HOSTS: [MOCK_IP],
+        CONF_SSL: True,
+    }
 
 
 async def test_user_flow_cannot_connect(
@@ -94,6 +120,9 @@ async def test_user_flow_requires_password(
 ) -> None:
     """Newer firmware that demands a password routes through the password step."""
     spec = mock_device.spec()
+    spec.https = True
+    spec.http_reads_open = False  # mode 2 redirects protected HTTP reads to HTTPS
+    spec.sec_level = 2  # encryption mode 2
     spec.needs_auth = True
     spec.password = "secret"
 
@@ -134,6 +163,8 @@ async def test_reauth_flow(
 ) -> None:
     """A stored password that stops working can be replaced via reauth."""
     spec = mock_device.spec()
+    spec.https = True
+    spec.http_reads_open = False
     spec.needs_auth = True
     spec.password = "newpass"
 

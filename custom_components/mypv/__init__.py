@@ -4,7 +4,6 @@ import json
 import logging
 
 import aiohttp
-from my_pv.exceptions import MyPVConnectionError
 
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry
@@ -17,6 +16,7 @@ from homeassistant.helpers.service import async_extract_entity_ids
 from homeassistant.helpers.typing import ConfigType
 
 from .communicate import MypvCommunicator
+from .connection import MyPVConnectionError
 from .const import COMM_HUB, DEV_IP, DOMAIN
 from .discovery import async_discover_mypv_devices
 

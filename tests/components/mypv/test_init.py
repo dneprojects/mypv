@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, patch
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.mypv import async_remove_config_entry_device
-from custom_components.mypv.const import COMM_HUB, DOMAIN
+from custom_components.mypv.const import COMM_HUB, CONF_HOSTS, DEV_IP, DOMAIN
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import ATTR_ENTITY_ID
+from homeassistant.const import ATTR_ENTITY_ID, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.setup import async_setup_component
@@ -60,19 +60,26 @@ async def test_setup_data_unreadable(
 
 async def test_setup_auth_required_starts_reauth(
     hass: HomeAssistant,
-    mock_config_entry: MockConfigEntry,
     mock_device: FakeWorld,
 ) -> None:
-    """A device that demands a password (with none stored) starts reauth on setup."""
+    """A stored password the device rejects starts reauth on setup."""
     spec = mock_device.spec()
+    spec.https = True
+    spec.http_reads_open = False
     spec.needs_auth = True
-    spec.password = "secret"  # the stored entry has no password at all
-    mock_config_entry.add_to_hass(hass)
+    spec.password = "correct"
 
-    assert not await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=f"mypv_{MOCK_IP}",
+        data={DEV_IP: MOCK_IP, CONF_HOSTS: [MOCK_IP], CONF_PASSWORD: "stale"},
+    )
+    entry.add_to_hass(hass)
+
+    assert not await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert mock_config_entry.state is ConfigEntryState.SETUP_ERROR
+    assert entry.state is ConfigEntryState.SETUP_ERROR
     assert any(
         flow["context"]["source"] == "reauth"
         for flow in hass.config_entries.flow.async_progress_by_handler(DOMAIN)

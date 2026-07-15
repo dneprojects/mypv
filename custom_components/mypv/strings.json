@@ -157,6 +157,14 @@
       }
     },
     "sensor": {
+      "encryption": {
+        "name": "Encryption",
+        "state": {
+          "http": "HTTP",
+          "https": "HTTPS",
+          "https_pw": "HTTPS+PW"
+        }
+      },
       "acthor_9_power_unit_update_state": {
         "name": "Acthor 9 Power Unit Update State",
         "state": {

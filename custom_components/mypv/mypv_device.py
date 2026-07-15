@@ -19,6 +19,7 @@ from .number import MpvPidPowerControl, MpvPowerControl, MpvSetupControl, MpvTou
 from .select import MpvCtrlTypeSelect
 from .sensor import (
     MpvDevStatSensor,
+    MpvEncSensor,
     MpvEnergyDailySensor,
     MpvEnergyMonthlySensor,
     MpvEnergySensor,
@@ -201,6 +202,7 @@ class MpyDevice:
                     "binary_sensor",
                     "button",
                     "ctrl_type",
+                    "enc_stat",
                     "number",
                     "sensor",
                     "switch",
@@ -216,6 +218,8 @@ class MpyDevice:
                 elif desc.kind == "ctrl_type":
                     self.logger.debug("Creating select entity for %s", key)
                     self.selects.append(MpvCtrlTypeSelect(self, key, desc))
+                elif desc.kind == "enc_stat":
+                    self.sensors.append(MpvEncSensor(self, key, desc))
                 elif desc.kind == "binary_sensor":
                     self.binary_sensors.append(MpvBinSensor(self, key, desc))
                 elif desc.kind == "switch":

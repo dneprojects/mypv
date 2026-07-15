@@ -12,10 +12,11 @@ from typing import Self
 from unittest.mock import AsyncMock
 
 from aiohttp.client_exceptions import ClientConnectionError
-from my_pv.exceptions import MyPVAuthenticationError, MyPVConnectionError
 import pytest
 
 from custom_components.mypv.connection import (
+    MyPVAuthenticationError,
+    MyPVConnectionError,
     MypvHttpConnection,
     MypvHttpsConnection,
     _encode_form,
@@ -138,17 +139,15 @@ async def test_https_send_posts_password_browser_encoded() -> None:
     assert session.posts[0]["data"] == "ww1target=555&pw=s-Qi2t!qdCXCZ7-"
 
 
-async def test_https_command_gets_control_html_with_password() -> None:
-    """Power steering GETs control.html with the literal-encoded password appended."""
+async def test_https_command_gets_control_html_without_password() -> None:
+    """Power steering GETs control.html; the password never lands in the URL."""
     session = _FakeSession(lambda: _FakeResponse(body="OK"))
     conn = _https_connection(session, "s-Qi2t!qdCXCZ7-")
 
     await conn.command("/control.html", {"power": 1500})
 
-    assert (
-        session.calls[0][0]
-        == "https://1.2.3.4/control.html?power=1500&pw=s-Qi2t!qdCXCZ7-"
-    )
+    assert session.calls[0][0] == "https://1.2.3.4/control.html?power=1500"
+    assert "pw=" not in session.calls[0][0]
 
 
 async def test_get_json_parses_body() -> None:

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Run a full Home Assistant dev instance with the myPV custom component loaded.
+#
+#   ./scripts/develop
+#
+# HA comes up on http://localhost:8123 — add the myPV integration via the UI and
+# enter the device password. Debug logging for the integration and the my-pv
+# library is enabled so the auth/read/write traffic is visible in the console.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+REPO="$(pwd)"
+
+# Link the integration into the HA config dir so HA discovers it as a custom component.
+mkdir -p config/custom_components
+ln -sfn "$REPO/custom_components/mypv" config/custom_components/mypv
+
+# Seed a minimal config on first run (kept out of git via .gitignore).
+if [ ! -f config/configuration.yaml ]; then
+  cat > config/configuration.yaml <<'YAML'
+default_config:
+
+logger:
+  default: info
+  logs:
+    custom_components.mypv: debug
+    my_pv: debug
+YAML
+fi
+
+exec hass --config config --debug

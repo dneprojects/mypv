@@ -139,6 +139,14 @@
       }
     },
     "sensor": {
+      "encryption": {
+        "name": "Verschlüsselung",
+        "state": {
+          "http": "HTTP",
+          "https": "HTTPS",
+          "https_pw": "HTTPS+PW"
+        }
+      },
       "acthor_9_power_unit_update_state": {
         "name": "Update-Status Leistungseinheit Acthor 9",
         "state": {

@@ -225,4 +225,5 @@ SETUP_TYPES: dict[str, MpvDescription] = {
     "ww1target": MpvDescription("Target Temperature", None, "number"),
     "ww1boost": MpvDescription("Boost Min Temperature", None, "number"),
     "ctrl": MpvDescription("Control type", None, "ctrl_type"),
+    "sec_level": MpvDescription("Encryption", None, "enc_stat"),
 }

@@ -4,3 +4,11 @@ dev-env/
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Local device-debugging scratch (not for commit)
+dev_probe.py
+_debug/
+
+# HA dev runtime config (not for commit)
+config/
+fake_elwa.py

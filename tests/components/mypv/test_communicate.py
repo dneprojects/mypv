@@ -2,11 +2,11 @@
 
 import asyncio
 
-from my_pv.exceptions import MyPVAuthenticationError
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.mypv.communicate import MypvCommunicator
+from custom_components.mypv.connection import MyPVAuthenticationError
 from custom_components.mypv.const import COMM_HUB, DOMAIN
 from custom_components.mypv.mypv_device import MpyDevice
 from homeassistant.core import HomeAssistant

@@ -127,6 +127,13 @@ UPDATE_STATE_ENUM: dict[int, str] = {
     10: "Download finished, waiting for installation",
 }
 
+# http-control encryption mode (setup ``sec_level``).
+ENCRYPTION_ENUM: dict[int, str] = {
+    0: "HTTP",
+    1: "HTTPS",
+    2: "HTTPS+PW",
+}
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -269,6 +276,31 @@ class MpvDevStatSensor(MpvSensor):
         if self.device.state is not None and self.device.state >= 0:
             self._last_value = self.device.state
         display = self._enum.get(self._last_value)
+        return slugify(display) if display is not None else None
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self.async_write_ha_state()
+
+
+class MpvEncSensor(MpvSensor):
+    """Return the http-control encryption mode (setup ``sec_level``) as an enum."""
+
+    def __init__(self, device: MpyDevice, key: str, info: MpvDescription) -> None:
+        """Initialize the sensor."""
+        super().__init__(device, key, info)
+        self._enum = ENCRYPTION_ENUM
+        self._attr_device_class = SensorDeviceClass.ENUM
+        self._attr_state_class = None
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_options = [slugify(value) for value in self._enum.values()]
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the encryption mode as a slugified enum option."""
+        value = self.device.setup.get(self._key)
+        display = self._enum.get(value) if value is not None else None
         return slugify(display) if display is not None else None
 
     @callback

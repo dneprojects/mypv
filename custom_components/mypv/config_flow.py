@@ -3,15 +3,14 @@
 from collections.abc import Mapping
 from typing import Any
 
-from my_pv.exceptions import MyPVAuthenticationError
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_PASSWORD
+from homeassistant.const import CONF_PASSWORD, CONF_SSL
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 
-from .connection import create_connection
+from .connection import MyPVAuthenticationError, MyPVConnectionError, create_connection
 from .const import CONF_HOSTS, DEV_IP, DOMAIN
 from .discovery import async_discover_mypv_devices
 
@@ -44,32 +43,85 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._pending_hosts: list[str] = []
         self._pending_title: str = ""
         self._pending_name: str | None = None
+        # Whether the detected device speaks HTTPS (new firmware, mode 0/1).
+        self._pending_use_https: bool = False
 
     def _all_hosts_in_configuration_exist(self, ip_list: list[str]) -> bool:
         """Return True if all hosts found already exist in configuration."""
         return all(ip in mypv_entries(self.hass) for ip in ip_list)
 
     async def _check_host(self, dev_ip: str) -> tuple[bool, list[str], str, bool]:
-        """Check a myPV device via the library.
+        """Check a myPV device and detect its transport.
 
         Returns ``(reachable, host_list, device_name, auth_required)``.
-        ``auth_required`` is True when the device is reachable but its firmware
-        requires a password (it redirects to HTTPS authentication).
+        ``auth_required`` is True when the firmware requires a login password
+        (encryption mode 2). As a side effect ``_pending_use_https`` is set when
+        the device speaks HTTPS without a password (new firmware, mode 1).
+
+        The encryption mode is read straight from ``setup.jsn``'s ``sec_level``
+        (``0`` = HTTP, ``1`` = HTTPS, ``2`` = HTTPS + password). ``mypv_dev.jsn``
+        is served over plain HTTP in every mode, so it only proves reachability
+        and gives the name; ``setup.jsn`` is readable over HTTP for modes 0/1
+        (and old firmware) and over HTTPS without a password in every mode, so
+        trying HTTP then HTTPS covers all firmware.
         """
-        connection = create_connection(dev_ip, None)
+        self._pending_use_https = False
+
+        name = "myPV"
+        reachable = False
+        setup: dict[str, Any] | None = None
+
+        http = create_connection(dev_ip, None)
+        if await self._try_open(http):
+            reachable = True
+            name = self._device_name(http)
+            setup = await self._try_get(http, "/setup.jsn")
+        await http.close()
+
+        # HTTP read failed (mode 2 redirects it, or HTTP is unreachable): read
+        # setup.jsn over HTTPS, which stays open without a password everywhere.
+        if setup is None:
+            https = create_connection(dev_ip, None, use_https=True)
+            if await self._try_open(https):
+                if not reachable:
+                    reachable = True
+                    name = self._device_name(https)
+                setup = await self._try_get(https, "/setup.jsn")
+            await https.close()
+
+        if not reachable:
+            return False, [], "myPV", False
+
+        sec_level = setup.get("sec_level") if setup else None
+        if sec_level == 2:
+            # HTTPS with a login password (encryption mode 2).
+            return True, [dev_ip], name, True
+        # Old firmware and mode 0 stay on HTTP; mode 1 (encrypted, no password)
+        # uses the device's HTTPS server.
+        self._pending_use_https = sec_level is not None and sec_level >= 1
+        return True, [dev_ip], name, False
+
+    @staticmethod
+    async def _try_get(connection: Any, path: str) -> dict[str, Any] | None:
+        """Read a JSON endpoint, returning None when it is unavailable."""
         try:
-            opened = await connection.open()
-        except MyPVAuthenticationError:
-            # Reachable but newer firmware requires a password.
-            await connection.close()
-            return True, [dev_ip], "myPV", True
+            return await connection.get_json(path)
+        except (MyPVAuthenticationError, MyPVConnectionError):
+            return None
 
-        device_name = "myPV"
-        if opened and connection.mypv_dev:
-            device_name = str(connection.mypv_dev.get("device", "myPV"))
-        await connection.close()
+    @staticmethod
+    async def _try_open(connection: Any) -> bool:
+        """Open a probe connection, treating any failure as unreachable."""
+        try:
+            return await connection.open()
+        except (MyPVAuthenticationError, MyPVConnectionError):
+            return False
 
-        return opened, ([dev_ip] if opened else []), device_name, False
+    @staticmethod
+    def _device_name(connection: Any) -> str:
+        """Return the device name from a probed connection."""
+        dev = connection.mypv_dev
+        return str(dev.get("device", "myPV")) if dev else "myPV"
 
     async def _verify_password(self, dev_ip: str, password: str) -> tuple[bool, str]:
         """Verify a password against the device. Returns ``(ok, device_name)``."""
@@ -93,6 +145,8 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         }
         if password:
             data[CONF_PASSWORD] = password
+        if self._pending_use_https:
+            data[CONF_SSL] = True
         return data
 
     async def _create_or_auth(

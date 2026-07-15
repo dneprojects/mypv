@@ -1,36 +1,44 @@
-"""HTTP transport for the myPV integration, built on the my-pv library.
+"""Self-contained HTTP(S) transport for the myPV integration.
 
-The my-pv library is used only to establish the connection and to authenticate
-(including HTTPS access with a password on newer firmware). Device *values* are
-kept raw on purpose: the myPV entities apply their own scaling (tenths of a
-degree, milli-hertz, ...) and read the ``data.jsn`` / ``setup.jsn`` keys
-verbatim, so the library's value/config layer (``MyPVDevice`` plus the bundled
-``configs``) is deliberately bypassed.
+Talks to the myPV local API (``mypv_dev.jsn`` / ``data.jsn`` / ``setup.jsn`` /
+``control.html``) directly over aiohttp. Device *values* are kept raw: the
+entities apply their own scaling and read the keys verbatim.
 
-Only the connection classes from ``my_pv.connection`` are reused, extended with
-the raw JSON/text access the entities and the ``control.html`` power steering
-need.
+Supports every encryption mode of the newer firmware:
+
+- **HTTP** (``sec_level`` 0): plain HTTP, no authentication.
+- **HTTPS without password** (``sec_level`` 1): HTTPS (self-signed), no auth.
+- **HTTPS with password** (``sec_level`` 2): the password gates ``/auth.jsn``
+  (login) and is attached to ``/setup.jsn`` config writes.
+
+Reads and ``control.html`` power steering are open (no password) in every mode.
+The device serves a single connection at a time, so every request of one
+connection is serialised through ``_io_lock``.
 """
 
 import asyncio
 import json
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from urllib.parse import quote, urlencode, urlunsplit
 
-from aiohttp.client_exceptions import ClientConnectionError
-from my_pv.connection import MyPVHTTPConnection, MyPVHTTPSConnection
-from my_pv.exceptions import MyPVAuthenticationError, MyPVConnectionError
+from aiohttp import ClientError, ClientSession, ClientTimeout
 
-if TYPE_CHECKING:
-    from aiohttp import ClientSession
-
+_REQUEST_TIMEOUT = ClientTimeout(total=5)
 # Characters JavaScript's encodeURIComponent leaves unescaped on top of the
-# always-safe alphanumerics/``-_.~``. The device firmware compares the raw
-# ``pw`` field without URL-decoding, so aiohttp's default encoding (which turns
-# e.g. ``!`` into ``%21``) makes a correct password fail. Encoding form bodies
-# exactly like the device's own web app avoids that.
+# always-safe alphanumerics/``-_.~``. The firmware compares the raw ``pw`` field
+# without URL-decoding, so aiohttp's default encoding (``!`` -> ``%21``) would
+# make a correct password fail. Encoding form bodies like the device web app
+# avoids that.
 _ENCODE_URI_SAFE = "!*'()"
 _FORM_HEADERS = {"Content-Type": "application/x-www-form-urlencoded"}
+
+
+class MyPVConnectionError(Exception):
+    """Raised when the device cannot be reached."""
+
+
+class MyPVAuthenticationError(Exception):
+    """Raised when authentication with the device fails."""
 
 
 def _encode_form(params: dict[str, Any]) -> str:
@@ -42,51 +50,85 @@ def _encode_form(params: dict[str, Any]) -> str:
     )
 
 
-class _RawAccessMixin:
-    """Raw ``*.jsn`` and ``control.html`` access on top of a library connection.
+class _Connection:
+    """Base transport: aiohttp session lifecycle plus raw endpoint access.
 
-    The library only returns parsed/normalised JSON and lowercases the
-    ``data.jsn`` keys, which would break keys such as ``volt_L2``. The entities
-    need the untouched dict as well as plain-text access to ``control.html``.
-    myPV serves a single connection at a time, so every request of one device is
-    serialised through ``_io_lock``.
+    Subclasses set ``_PROTOCOL`` (``http``/``https``) and ``_SSL`` (the aiohttp
+    ``ssl`` argument: ``True`` verifies, ``False`` skips verification for the
+    device's self-signed certificate).
     """
 
-    if TYPE_CHECKING:
-        # Provided by the my_pv.connection base classes at runtime.
-        _session: ClientSession | None
-        _PROTOCOL: str
-        _SSL_CHECK: bool
-        _host: str
+    _PROTOCOL: str = "http"
+    _SSL: bool = True
 
-        def is_open(self) -> bool: ...
-        async def open(self) -> bool: ...
-        async def close(self) -> bool: ...
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        """Initialise the connection and its per-device request lock."""
-        super().__init__(*args, **kwargs)
+    def __init__(self, host: str) -> None:
+        """Store the host and prepare the per-device request lock."""
+        self._host = host
+        self._session: ClientSession | None = None
+        self._mypv_dev: dict[str, Any] | None = None
         self._io_lock = asyncio.Lock()
 
-    async def _request(self, path: str, query: dict[str, Any] | None) -> str:
-        """Open the connection if needed and perform a serialised GET.
+    def _url(self, path: str, query: str = "") -> str:
+        return urlunsplit([self._PROTOCOL, self._host, path, query, None])
 
-        Returns the response body as text. The response is always released via
-        the ``async with`` block, including on the 401 (auth-required) path,
-        which previously leaked the connection until garbage collection.
+    async def open(self) -> bool:
+        """Open a fresh session, read the device identification, authenticate.
+
+        Returns ``False`` (instead of raising) when the device is unreachable or
+        does not answer ``mypv_dev.jsn`` with a 200, so callers can fall back.
+        Raises ``MyPVAuthenticationError`` when a required login is rejected.
         """
+        await self.close()
+        session = ClientSession(timeout=_REQUEST_TIMEOUT)
+        try:
+            async with session.get(self._url("/mypv_dev.jsn"), ssl=self._SSL) as resp:
+                if resp.status != 200:
+                    await session.close()
+                    return False
+                self._mypv_dev = json.loads(await resp.text())
+            if not await self._authenticate(session):
+                await session.close()
+                return False
+        except MyPVAuthenticationError:
+            await session.close()
+            raise
+        except (ClientError, TimeoutError, OSError):
+            await session.close()
+            return False
+        self._session = session
+        return True
+
+    async def _authenticate(self, session: ClientSession) -> bool:
+        """No authentication for plain HTTP / HTTPS-without-password."""
+        return True
+
+    def is_open(self) -> bool:
+        """Return whether the session is currently open."""
+        return self._session is not None and not self._session.closed
+
+    async def close(self) -> None:
+        """Close the session if it is open."""
+        if self._session is not None:
+            await self._session.close()
+            self._session = None
+
+    @property
+    def mypv_dev(self) -> dict[str, Any] | None:
+        """Return the device identification dict (``mypv_dev.jsn``)."""
+        return self._mypv_dev
+
+    async def _request(self, path: str, query: dict[str, Any] | None) -> str:
+        """Open if needed and perform a serialised GET, returning the body."""
         if not self.is_open() and not await self.open():
             raise MyPVConnectionError
         assert self._session is not None
-        url = urlunsplit(
-            [self._PROTOCOL, self._host, path, urlencode(query or {}), None]
-        )
+        url = self._url(path, urlencode(query or {}))
         try:
-            async with self._session.get(url, ssl=self._SSL_CHECK) as response:
+            async with self._session.get(url, ssl=self._SSL) as response:
                 if response.status == 401:
                     raise MyPVAuthenticationError
                 return await response.text()
-        except ClientConnectionError as exc:
+        except (ClientError, TimeoutError) as exc:
             await self.close()
             raise MyPVConnectionError from exc
 
@@ -103,41 +145,50 @@ class _RawAccessMixin:
             return await self._request(path, query)
 
     async def send(self, path: str, params: dict[str, Any]) -> str:
-        """Write to the device. Plain HTTP passes the values in a GET query."""
+        """Write config to the device. Plain HTTP passes the values in a GET."""
         return await self.get_text(path, params)
 
     async def command(self, path: str, params: dict[str, Any]) -> str:
-        """Real-time control command (``control.html``): plain HTTP GET query."""
+        """Real-time control command (``control.html``): GET query, no password."""
         return await self.get_text(path, params)
 
 
-class MypvHttpConnection(_RawAccessMixin, MyPVHTTPConnection):
-    """Plain-HTTP connection for older firmware without authentication."""
+class MypvHttpConnection(_Connection):
+    """Plain-HTTP connection for older firmware (or encryption mode 0)."""
+
+    _PROTOCOL = "http"
+    _SSL = True  # no TLS on http; the value is irrelevant there
 
 
-class MypvHttpsConnection(_RawAccessMixin, MyPVHTTPSConnection):
-    """HTTPS connection with password authentication for newer firmware.
+class MypvHttpsConnection(_Connection):
+    """HTTPS connection (self-signed) with an optional login password.
 
-    The auth firmware is stateless: it never sets a session cookie and instead
-    requires the password in the body of every write. Reads (``*.jsn``) stay
-    unauthenticated GETs.
+    Covers encryption modes 1 (no password) and 2 (password). The password gates
+    ``/auth.jsn`` and is attached to ``/setup.jsn`` writes; reads and
+    ``control.html`` stay open. The firmware is stateless — no session cookie.
     """
 
-    _password: str
+    _PROTOCOL = "https"
+    _SSL = False  # accept the device's self-signed certificate
 
-    async def _auth(self, session: ClientSession) -> bool:
-        """Authenticate with browser-compatible password encoding.
+    def __init__(self, host: str, password: str | None = None) -> None:
+        """Initialise an HTTPS connection with an optional password."""
+        super().__init__(host)
+        self._pw = password
 
-        The library lets aiohttp percent-escape the password; firmware that
-        compares the raw ``pw`` field then rejects a correct password. We build
-        the body exactly like the device's own web app instead.
+    async def _authenticate(self, session: ClientSession) -> bool:
+        """Log in via ``/auth.jsn`` when a password is set; otherwise a no-op.
+
+        The password is browser-encoded (encodeURIComponent) because the firmware
+        compares the raw ``pw`` field without URL-decoding.
         """
-        url = urlunsplit([self._PROTOCOL, self._host, "/auth.jsn", None, None])
+        if not self._pw:
+            return True
         async with session.post(
-            url,
-            data=_encode_form({"pw": self._password}),
+            self._url("/auth.jsn"),
+            data=_encode_form({"pw": self._pw}),
             headers=_FORM_HEADERS,
-            ssl=self._SSL_CHECK,
+            ssl=self._SSL,
         ) as response:
             payload: dict[str, Any] = {}
             if response.content_type == "application/json":
@@ -147,51 +198,36 @@ class MypvHttpsConnection(_RawAccessMixin, MyPVHTTPSConnection):
         raise MyPVAuthenticationError
 
     async def send(self, path: str, params: dict[str, Any]) -> str:
-        """Write to the device: POST the params plus the password on every call."""
+        """Write config over HTTPS: POST, attaching the password only when set."""
         async with self._io_lock:
             if not self.is_open() and not await self.open():
                 raise MyPVConnectionError
             assert self._session is not None
-            url = urlunsplit([self._PROTOCOL, self._host, path, None, None])
-            body = _encode_form({**params, "pw": self._password})
+            body = _encode_form({**params, "pw": self._pw} if self._pw else params)
             try:
                 async with self._session.post(
-                    url, data=body, headers=_FORM_HEADERS, ssl=self._SSL_CHECK
+                    self._url(path),
+                    data=body,
+                    headers=_FORM_HEADERS,
+                    ssl=self._SSL,
                 ) as response:
                     if response.status == 401:
                         raise MyPVAuthenticationError
                     return await response.text()
-            except ClientConnectionError as exc:
-                await self.close()
-                raise MyPVConnectionError from exc
-
-    async def command(self, path: str, params: dict[str, Any]) -> str:
-        """Control command (``control.html``): GET query with the password appended.
-
-        Power steering uses the ``control.html`` GET interface, not ``setup.jsn``.
-        The password is carried as a browser-encoded query parameter (harmless if
-        the firmware does not require it there).
-        """
-        async with self._io_lock:
-            if not self.is_open() and not await self.open():
-                raise MyPVConnectionError
-            assert self._session is not None
-            query = _encode_form({**params, "pw": self._password})
-            url = urlunsplit([self._PROTOCOL, self._host, path, query, None])
-            try:
-                async with self._session.get(url, ssl=self._SSL_CHECK) as response:
-                    if response.status == 401:
-                        raise MyPVAuthenticationError
-                    return await response.text()
-            except ClientConnectionError as exc:
+            except (ClientError, TimeoutError) as exc:
                 await self.close()
                 raise MyPVConnectionError from exc
 
 
 def create_connection(
-    host: str, password: str | None
+    host: str, password: str | None = None, *, use_https: bool = False
 ) -> MypvHttpConnection | MypvHttpsConnection:
-    """Return the connection type matching the given host and password."""
-    if password:
+    """Return the connection type for the device.
+
+    HTTPS is used when the device speaks it (``use_https``) or a password is set
+    (which implies the HTTPS-with-password firmware). Plain HTTP is used only for
+    old firmware that has no HTTPS server.
+    """
+    if use_https or password:
         return MypvHttpsConnection(host, password)
     return MypvHttpConnection(host)

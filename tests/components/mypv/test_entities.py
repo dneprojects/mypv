@@ -3,6 +3,7 @@
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.mypv.const import CONF_HOSTS, DEV_IP, DOMAIN
+from homeassistant.const import CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
@@ -52,6 +53,34 @@ async def test_control_entities(
     relais = hass.states.get(f"binary_sensor.{PREFIX}_relais")
     assert relais is not None
     assert relais.state == "on"  # rel1_out 1
+
+    # Old firmware without sec_level has no encryption sensor.
+    assert hass.states.get(f"sensor.{PREFIX}_encryption") is None
+
+
+async def test_encryption_sensor_reports_mode(
+    hass: HomeAssistant, mock_device: FakeWorld
+) -> None:
+    """A mode-2 device exposes the encryption sensor as HTTPS+PW."""
+    spec = mock_device.spec()
+    spec.https = True
+    spec.http_reads_open = False  # mode 2 redirects plain-HTTP reads
+    spec.sec_level = 2
+    spec.needs_auth = True
+    spec.password = "secret"
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=f"mypv_{MOCK_IP}",
+        data={DEV_IP: MOCK_IP, CONF_HOSTS: [MOCK_IP], CONF_PASSWORD: "secret"},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    encryption = hass.states.get(f"sensor.{PREFIX}_encryption")
+    assert encryption is not None
+    assert encryption.state == "https_pw"  # sec_level 2 -> HTTPS+PW
 
 
 async def test_energy_sensor_name_is_translated(
