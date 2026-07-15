@@ -4,6 +4,19 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.5.1
+
+### Changes
+- **Login fix — password encoding (HTTPS+auth firmware).** `MypvHttpsConnection` now overrides the library's `_auth`: the password is sent with `encodeURIComponent` semantics (`_encode_form`, safe set `!*'()`) instead of aiohttp's default form encoding. Captured from a real `e0002410` HAR: the device's web app logs in via `POST /auth.jsn` body `pw=<literal>` and the firmware compares the **raw** `pw` field without URL-decoding — so aiohttp turning `!` into `%21` made a correct password fail with `MyPVAuthenticationError` ("Invalid authentication"). This affects any password containing `! * ' ( ) ~`.
+- **Control fix — stateless per-request auth, two write channels.** The auth firmware sets no session cookie; every write carries the password (reads stay unauthenticated GETs). The password is browser-encoded (`_encode_form`) everywhere. Two channels match the two device mechanisms — both **verified on real `e0002410` hardware**:
+  - **Config writes → `send()`**: `POST /setup.jsn` body `key=value&pw=<password>`. Used by `set_number`, `switch`, `set_control_mode`, and `activate_boost` (`bststrt`, as the device web app posts it).
+  - **Power steering → `command()`**: `GET /control.html?key=value&pw=<password>`. Used by `set_power` (`power`) and `set_pid_power` (`pid_power`). `control.html` remains the power-steering endpoint on the auth firmware (per the myPV *Documentation of Controls*), but now **also requires the password** — passed as a browser-encoded query parameter.
+  - Plain HTTP (old firmware) keeps a GET query with no password for both, so it is backwards compatible.
+- **Offline test harness.** `fake_elwa.py` (git-ignored) reproduces the `e0002410` contract from the HAR — including the non-decoding `pw` comparison — so the login + config-write fix is provable without the device: unpatched lib → `MyPVAuthenticationError`; patched connector → `open()` succeeds and `POST /setup.jsn` writes apply. `test_connection.py` covers `_encode_form`, the HTTPS POST-write body, and the `control.html` GET command.
+
+### Verified on hardware (`e0002410`)
+- Login (encoding), config writes (`POST /setup.jsn`), boost (`bststrt` via `setup.jsn`), and power steering (`GET /control.html?power=…&pw=…`) all confirmed working on a real device. `control.html` is also used for the control-state *read* in `state_update`.
+
 ## v1.5.0
 
 ### Changes

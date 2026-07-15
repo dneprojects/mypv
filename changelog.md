@@ -3,6 +3,9 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.5.1
+- **Experimental (HTTPS+password firmware):** fixed login failing with a correct password when it contains special characters (e.g. `!`), and fixed device control (setting values, switches, power, boost) not taking effect. Passwords are now sent like the device's own web interface, and control commands are written the way the newer firmware expects.
+
 ## v1.5.0
 - Device communication now runs through the official my-pv library (entities and power control unchanged).
 - **Experimental:** password authentication for newer HTTPS firmware (e.g. `e0002410`) — setup asks for it only when the device requires it, with re-authentication support. This path is new; if you run auth firmware, please report any issues.

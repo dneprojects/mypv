@@ -101,6 +101,16 @@ class FakeConnection:
         self._record(path, query)
         return self._spec.text.get(path, CONTROL_HTML)
 
+    async def send(self, path: str, params: dict[str, Any]) -> str:
+        """Record a write and return the canned text body for ``path``."""
+        self._record(path, params)
+        return self._spec.text.get(path, CONTROL_HTML)
+
+    async def command(self, path: str, params: dict[str, Any]) -> str:
+        """Record a control command and return the canned text body for ``path``."""
+        self._record(path, params)
+        return self._spec.text.get(path, CONTROL_HTML)
+
     def _record(self, path: str, query: dict[str, Any] | None) -> None:
         self.requests.append((path, dict(query or {})))
         if self._spec is not None and self._spec.error is not None:

@@ -142,7 +142,7 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
     async def set_number(self, device: MpyDevice, key: str, act_val: int) -> bool:
         """Set a setup value."""
         try:
-            response_text = await self._connection(device).get_text(
+            response_text = await self._connection(device).send(
                 "/setup.jsn", {key: act_val}
             )
             self.get_state_dict(response_text, device)
@@ -157,7 +157,7 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
     async def set_power(self, device: MpyDevice, act_pow: int) -> bool:
         """Set heater power."""
         try:
-            response_text = await self._connection(device).get_text(
+            response_text = await self._connection(device).command(
                 "/control.html", {"power": act_pow}
             )
             self.get_state_dict(response_text, device)
@@ -172,7 +172,7 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
     async def set_control_mode(self, device: MpyDevice, act_mode: int) -> bool:
         """Set power control mode, e.g. html."""
         try:
-            await self._connection(device).get_text("/setup.jsn", {"ctrl": act_mode})
+            await self._connection(device).send("/setup.jsn", {"ctrl": act_mode})
         except MyPVAuthenticationError as err:
             self._start_reauth(err)
             return False
@@ -184,7 +184,7 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
     async def set_pid_power(self, device: MpyDevice, act_pow: int) -> bool:
         """Set heater power with local pid control."""
         try:
-            response_text = await self._connection(device).get_text(
+            response_text = await self._connection(device).command(
                 "/control.html", {"pid_power": act_pow}
             )
             self.get_state_dict(response_text, device)
@@ -199,7 +199,7 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
     async def switch(self, device: MpyDevice, key: str, state: bool) -> bool:
         """Set a setup switch."""
         try:
-            response_text = await self._connection(device).get_text(
+            response_text = await self._connection(device).send(
                 "/setup.jsn", {key: int(state)}
             )
             self.get_state_dict(response_text, device)
@@ -214,7 +214,7 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
     async def activate_boost(self, device: MpyDevice, mode: int = 1) -> bool:
         """Activate or deactivate boost mode."""
         try:
-            await self._connection(device).get_text("/data.jsn", {"bststrt": mode})
+            await self._connection(device).send("/setup.jsn", {"bststrt": mode})
         except MyPVAuthenticationError as err:
             self._start_reauth(err)
             return False

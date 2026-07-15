@@ -18,6 +18,7 @@ import pytest
 from custom_components.mypv.connection import (
     MypvHttpConnection,
     MypvHttpsConnection,
+    _encode_form,
     create_connection,
 )
 
@@ -73,11 +74,24 @@ class _FakeSession:
     def __init__(self, response_factory) -> None:
         self._factory = response_factory
         self.calls: list[tuple[str, object]] = []
+        self.posts: list[dict[str, object]] = []
         self.responses: list[_FakeResponse] = []
         self.closed = False  # queried by the library's is_open()
 
     def get(self, url: str, ssl: object = None) -> _FakeResponse:
         self.calls.append((url, ssl))
+        response = self._factory()
+        self.responses.append(response)
+        return response
+
+    def post(
+        self,
+        url: str,
+        data: object = None,
+        headers: object = None,
+        ssl: object = None,
+    ) -> _FakeResponse:
+        self.posts.append({"url": url, "data": data, "ssl": ssl})
         response = self._factory()
         self.responses.append(response)
         return response
@@ -91,10 +105,50 @@ def _connection(session: _FakeSession) -> MypvHttpConnection:
     return conn
 
 
+def _https_connection(session: _FakeSession, password: str) -> MypvHttpsConnection:
+    """A real HTTPS connection wired to a fake session, without opening it."""
+    conn = MypvHttpsConnection("1.2.3.4", password)
+    conn._session = session  # inject the transport under test
+    conn.open = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    return conn
+
+
 def test_create_connection_picks_transport_by_password() -> None:
     """No password -> plain HTTP; a password -> authenticated HTTPS."""
     assert isinstance(create_connection("1.2.3.4", None), MypvHttpConnection)
     assert isinstance(create_connection("1.2.3.4", "secret"), MypvHttpsConnection)
+
+
+def test_encode_form_matches_encodeuricomponent() -> None:
+    """The password is encoded like the browser: !*'() stay literal, / and space do not."""
+    assert _encode_form({"pw": "s-Qi2t!qdCXCZ7-"}) == "pw=s-Qi2t!qdCXCZ7-"
+    assert _encode_form({"pw": "a*b'(c)~"}) == "pw=a*b'(c)~"
+    assert _encode_form({"x": "a b/c&d"}) == "x=a%20b%2Fc%26d"
+
+
+async def test_https_send_posts_password_browser_encoded() -> None:
+    """A HTTPS write POSTs the params plus the literal-encoded password."""
+    session = _FakeSession(lambda: _FakeResponse(body="{}"))
+    conn = _https_connection(session, "s-Qi2t!qdCXCZ7-")
+
+    await conn.send("/setup.jsn", {"ww1target": 555})
+
+    assert session.posts[0]["url"] == "https://1.2.3.4/setup.jsn"
+    # The '!' must stay literal (not %21) or the device rejects the password.
+    assert session.posts[0]["data"] == "ww1target=555&pw=s-Qi2t!qdCXCZ7-"
+
+
+async def test_https_command_gets_control_html_with_password() -> None:
+    """Power steering GETs control.html with the literal-encoded password appended."""
+    session = _FakeSession(lambda: _FakeResponse(body="OK"))
+    conn = _https_connection(session, "s-Qi2t!qdCXCZ7-")
+
+    await conn.command("/control.html", {"power": 1500})
+
+    assert (
+        session.calls[0][0]
+        == "https://1.2.3.4/control.html?power=1500&pw=s-Qi2t!qdCXCZ7-"
+    )
 
 
 async def test_get_json_parses_body() -> None:

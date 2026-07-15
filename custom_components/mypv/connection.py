@@ -15,7 +15,7 @@ need.
 import asyncio
 import json
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlencode, urlunsplit
+from urllib.parse import quote, urlencode, urlunsplit
 
 from aiohttp.client_exceptions import ClientConnectionError
 from my_pv.connection import MyPVHTTPConnection, MyPVHTTPSConnection
@@ -23,6 +23,23 @@ from my_pv.exceptions import MyPVAuthenticationError, MyPVConnectionError
 
 if TYPE_CHECKING:
     from aiohttp import ClientSession
+
+# Characters JavaScript's encodeURIComponent leaves unescaped on top of the
+# always-safe alphanumerics/``-_.~``. The device firmware compares the raw
+# ``pw`` field without URL-decoding, so aiohttp's default encoding (which turns
+# e.g. ``!`` into ``%21``) makes a correct password fail. Encoding form bodies
+# exactly like the device's own web app avoids that.
+_ENCODE_URI_SAFE = "!*'()"
+_FORM_HEADERS = {"Content-Type": "application/x-www-form-urlencoded"}
+
+
+def _encode_form(params: dict[str, Any]) -> str:
+    """Encode a form body the way the device web app does (encodeURIComponent)."""
+    return "&".join(
+        f"{quote(str(key), safe=_ENCODE_URI_SAFE)}"
+        f"={quote(str(value), safe=_ENCODE_URI_SAFE)}"
+        for key, value in params.items()
+    )
 
 
 class _RawAccessMixin:
@@ -85,13 +102,90 @@ class _RawAccessMixin:
         async with self._io_lock:
             return await self._request(path, query)
 
+    async def send(self, path: str, params: dict[str, Any]) -> str:
+        """Write to the device. Plain HTTP passes the values in a GET query."""
+        return await self.get_text(path, params)
+
+    async def command(self, path: str, params: dict[str, Any]) -> str:
+        """Real-time control command (``control.html``): plain HTTP GET query."""
+        return await self.get_text(path, params)
+
 
 class MypvHttpConnection(_RawAccessMixin, MyPVHTTPConnection):
     """Plain-HTTP connection for older firmware without authentication."""
 
 
 class MypvHttpsConnection(_RawAccessMixin, MyPVHTTPSConnection):
-    """HTTPS connection with password authentication for newer firmware."""
+    """HTTPS connection with password authentication for newer firmware.
+
+    The auth firmware is stateless: it never sets a session cookie and instead
+    requires the password in the body of every write. Reads (``*.jsn``) stay
+    unauthenticated GETs.
+    """
+
+    _password: str
+
+    async def _auth(self, session: ClientSession) -> bool:
+        """Authenticate with browser-compatible password encoding.
+
+        The library lets aiohttp percent-escape the password; firmware that
+        compares the raw ``pw`` field then rejects a correct password. We build
+        the body exactly like the device's own web app instead.
+        """
+        url = urlunsplit([self._PROTOCOL, self._host, "/auth.jsn", None, None])
+        async with session.post(
+            url,
+            data=_encode_form({"pw": self._password}),
+            headers=_FORM_HEADERS,
+            ssl=self._SSL_CHECK,
+        ) as response:
+            payload: dict[str, Any] = {}
+            if response.content_type == "application/json":
+                payload = json.loads(await response.text())
+        if payload.get("auth", 0) == 1:
+            return True
+        raise MyPVAuthenticationError
+
+    async def send(self, path: str, params: dict[str, Any]) -> str:
+        """Write to the device: POST the params plus the password on every call."""
+        async with self._io_lock:
+            if not self.is_open() and not await self.open():
+                raise MyPVConnectionError
+            assert self._session is not None
+            url = urlunsplit([self._PROTOCOL, self._host, path, None, None])
+            body = _encode_form({**params, "pw": self._password})
+            try:
+                async with self._session.post(
+                    url, data=body, headers=_FORM_HEADERS, ssl=self._SSL_CHECK
+                ) as response:
+                    if response.status == 401:
+                        raise MyPVAuthenticationError
+                    return await response.text()
+            except ClientConnectionError as exc:
+                await self.close()
+                raise MyPVConnectionError from exc
+
+    async def command(self, path: str, params: dict[str, Any]) -> str:
+        """Control command (``control.html``): GET query with the password appended.
+
+        Power steering uses the ``control.html`` GET interface, not ``setup.jsn``.
+        The password is carried as a browser-encoded query parameter (harmless if
+        the firmware does not require it there).
+        """
+        async with self._io_lock:
+            if not self.is_open() and not await self.open():
+                raise MyPVConnectionError
+            assert self._session is not None
+            query = _encode_form({**params, "pw": self._password})
+            url = urlunsplit([self._PROTOCOL, self._host, path, query, None])
+            try:
+                async with self._session.get(url, ssl=self._SSL_CHECK) as response:
+                    if response.status == 401:
+                        raise MyPVAuthenticationError
+                    return await response.text()
+            except ClientConnectionError as exc:
+                await self.close()
+                raise MyPVConnectionError from exc
 
 
 def create_connection(
