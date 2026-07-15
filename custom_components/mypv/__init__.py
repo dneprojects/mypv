@@ -4,6 +4,7 @@ import json
 import logging
 
 import aiohttp
+from my_pv.exceptions import MyPVConnectionError
 
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry
@@ -85,7 +86,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     comm = MypvCommunicator(hass, entry)
     try:
         await comm.initialize()
-    except (TimeoutError, aiohttp.ClientError, json.JSONDecodeError) as ex:
+    except (
+        TimeoutError,
+        aiohttp.ClientError,
+        json.JSONDecodeError,
+        MyPVConnectionError,
+    ) as ex:
         raise ConfigEntryNotReady(
             f"Error connecting to myPV device at {entry.data[DEV_IP]}"
         ) from ex
@@ -115,6 +121,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id, None)
+        data = hass.data[DOMAIN].pop(entry.entry_id, None)
+        if data is not None:
+            await data[COMM_HUB].async_close()
 
     return unload_ok

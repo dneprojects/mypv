@@ -12,16 +12,32 @@
       "confirm": {
         "title": "myPV Device Discovered",
         "description": "Would you like to add the {name} at {ip} to Home Assistant?"
+      },
+      "password": {
+        "title": "myPV authentication",
+        "description": "The {name} at {ip} requires a password.",
+        "data": {
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "myPV authentication",
+        "description": "The password for {name} is no longer valid. Enter it again.",
+        "data": {
+          "password": "Password"
+        }
       }
     },
     "error": {
       "could_not_connect": "Failed to connect to the device",
       "host_exists": "This device is already configured",
+      "invalid_auth": "Invalid authentication",
       "unknown": "An unexpected error occurred"
     },
     "abort": {
       "already_configured": "Device is already configured",
-      "cannot_connect": "Failed to connect to the device"
+      "cannot_connect": "Failed to connect to the device",
+      "reauth_successful": "Re-authentication was successful"
     }
   },
   "entity": {

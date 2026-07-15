@@ -12,16 +12,32 @@
       "confirm": {
         "title": "myPV Gerät entdeckt",
         "description": "Möchtest du das Gerät {name} unter der IP {ip} zu Home Assistant hinzufügen?"
+      },
+      "password": {
+        "title": "myPV-Authentifizierung",
+        "description": "Das Gerät {name} unter der IP {ip} benötigt ein Passwort.",
+        "data": {
+          "password": "Passwort"
+        }
+      },
+      "reauth_confirm": {
+        "title": "myPV-Authentifizierung",
+        "description": "Das Passwort für {name} ist nicht mehr gültig. Bitte gib es erneut ein.",
+        "data": {
+          "password": "Passwort"
+        }
       }
     },
     "error": {
       "could_not_connect": "Verbindung zum Gerät fehlgeschlagen",
       "host_exists": "Dieses Gerät ist bereits konfiguriert",
+      "invalid_auth": "Ungültige Authentifizierung",
       "unknown": "Ein unerwarteter Fehler ist aufgetreten"
     },
     "abort": {
       "already_configured": "Gerät ist bereits konfiguriert",
-      "cannot_connect": "Verbindung zum Gerät fehlgeschlagen"
+      "cannot_connect": "Verbindung zum Gerät fehlgeschlagen",
+      "reauth_successful": "Die erneute Authentifizierung war erfolgreich"
     }
   },
   "entity": {

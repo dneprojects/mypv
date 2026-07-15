@@ -1,21 +1,19 @@
 """Config flow for ELWA myPV integration."""
 
-import json
-from json import JSONDecodeError
+from collections.abc import Mapping
 from typing import Any
 
-import aiohttp
+from my_pv.exceptions import MyPVAuthenticationError
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.const import CONF_PASSWORD
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 
+from .connection import MypvHttpConnection, MypvHttpsConnection
 from .const import CONF_HOSTS, DEV_IP, DOMAIN
 from .discovery import async_discover_mypv_devices
-
-CHECK_TIMEOUT = aiohttp.ClientTimeout(total=5)
 
 
 @callback
@@ -41,29 +39,73 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._discovered_devices: dict[str, str] = {}
         self._discovery_ip: str | None = None
         self._discovery_name: str | None = None
+        # State carried into the password step when the device needs auth.
+        self._pending_ip: str | None = None
+        self._pending_hosts: list[str] = []
+        self._pending_title: str = ""
+        self._pending_name: str | None = None
 
     def _all_hosts_in_configuration_exist(self, ip_list: list[str]) -> bool:
         """Return True if all hosts found already exist in configuration."""
         return all(ip in mypv_entries(self.hass) for ip in ip_list)
 
-    async def _check_host(self, dev_ip: str) -> tuple[bool, list[str], str]:
-        """Check if the myPV device at the given ip answers and fetch its name."""
-        host_list: list[str] = []
-        device_name = "myPV"
+    async def _check_host(self, dev_ip: str) -> tuple[bool, list[str], str, bool]:
+        """Check a myPV device via the library.
 
-        session = async_get_clientsession(self.hass)
+        Returns ``(reachable, host_list, device_name, auth_required)``.
+        ``auth_required`` is True when the device is reachable but its firmware
+        requires a password (it redirects to HTTPS authentication).
+        """
+        connection = MypvHttpConnection(dev_ip)
         try:
-            async with session.get(
-                f"http://{dev_ip}/mypv_dev.jsn", timeout=CHECK_TIMEOUT
-            ) as resp:
-                data = json.loads(await resp.text())
-            host_list.append(dev_ip)
-            if isinstance(data, dict) and "device" in data:
-                device_name = str(data["device"])
-        except TimeoutError, aiohttp.ClientError, JSONDecodeError, TypeError:
-            pass
+            opened = await connection.open()
+        except MyPVAuthenticationError:
+            # Reachable but newer firmware requires a password.
+            await connection.close()
+            return True, [dev_ip], "myPV", True
 
-        return len(host_list) > 0, host_list, device_name
+        device_name = "myPV"
+        if opened and connection.mypv_dev:
+            device_name = str(connection.mypv_dev.get("device", "myPV"))
+        await connection.close()
+
+        return opened, ([dev_ip] if opened else []), device_name, False
+
+    async def _verify_password(self, dev_ip: str, password: str) -> tuple[bool, str]:
+        """Verify a password against the device. Returns ``(ok, device_name)``."""
+        connection = MypvHttpsConnection(dev_ip, password)
+        try:
+            opened = await connection.open()
+        except MyPVAuthenticationError:
+            await connection.close()
+            return False, "myPV"
+        device_name = "myPV"
+        if opened and connection.mypv_dev:
+            device_name = str(connection.mypv_dev.get("device", "myPV"))
+        await connection.close()
+        return opened, device_name
+
+    def _entry_data(self, password: str | None = None) -> dict[str, Any]:
+        """Build the config entry data for the pending device."""
+        data: dict[str, Any] = {
+            DEV_IP: self._pending_ip,
+            CONF_HOSTS: self._pending_hosts,
+        }
+        if password:
+            data[CONF_PASSWORD] = password
+        return data
+
+    async def _create_or_auth(
+        self, dev_ip: str, hosts: list[str], title: str, name: str, auth_required: bool
+    ) -> config_entries.ConfigFlowResult:
+        """Create the entry, or route to the password step if auth is needed."""
+        self._pending_ip = dev_ip
+        self._pending_hosts = hosts
+        self._pending_title = title
+        self._pending_name = name
+        if auth_required:
+            return await self.async_step_password()
+        return self.async_create_entry(title=title, data=self._entry_data())
 
     async def async_step_dhcp(
         self, discovery_info: DhcpServiceInfo
@@ -71,7 +113,7 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle discovery via dhcp."""
         dev_ip = discovery_info.ip
 
-        can_connect, _ips_found, fetched_name = await self._check_host(dev_ip)
+        can_connect, _ips_found, fetched_name, _auth = await self._check_host(dev_ip)
         if not can_connect:
             return self.async_abort(reason="cannot_connect")
 
@@ -91,7 +133,7 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         dev_ip = discovery_info["ip"]
         dev_host = discovery_info.get("host", "myPV")
 
-        can_connect, _ips_found, fetched_name = await self._check_host(dev_ip)
+        can_connect, _ips_found, fetched_name, _auth = await self._check_host(dev_ip)
         if not can_connect:
             return self.async_abort(reason="cannot_connect")
 
@@ -114,7 +156,9 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             assert self._discovery_ip is not None
 
-            can_connect, ips_found, _ = await self._check_host(self._discovery_ip)
+            can_connect, ips_found, _, auth_required = await self._check_host(
+                self._discovery_ip
+            )
             if not can_connect:
                 return self.async_abort(reason="cannot_connect")
 
@@ -123,9 +167,12 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if self._discovery_name != "myPV"
                 else f"myPV ({self._discovery_ip})"
             )
-            return self.async_create_entry(
-                title=final_title,
-                data={DEV_IP: self._discovery_ip, CONF_HOSTS: ips_found},
+            return await self._create_or_auth(
+                self._discovery_ip,
+                ips_found,
+                final_title,
+                self._discovery_name or "myPV",
+                auth_required,
             )
 
         return self.async_show_form(
@@ -152,7 +199,12 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             dev_ip = user_input[DEV_IP]
-            can_connect, ips_found, fetched_name = await self._check_host(dev_ip)
+            (
+                can_connect,
+                ips_found,
+                fetched_name,
+                auth_required,
+            ) = await self._check_host(dev_ip)
 
             if can_connect:
                 if self._all_hosts_in_configuration_exist(ips_found):
@@ -168,9 +220,8 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         if display_name != "myPV"
                         else f"myPV ({dev_ip})"
                     )
-                    return self.async_create_entry(
-                        title=final_title,
-                        data={DEV_IP: dev_ip, CONF_HOSTS: ips_found},
+                    return await self._create_or_auth(
+                        dev_ip, ips_found, final_title, display_name, auth_required
                     )
             else:
                 self._errors[DEV_IP] = "could_not_connect"
@@ -191,4 +242,59 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user", data_schema=setup_schema, errors=self._errors
+        )
+
+    async def async_step_password(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Ask for the device password (newer firmware requires authentication)."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            assert self._pending_ip is not None
+            password = user_input[CONF_PASSWORD]
+            ok, _name = await self._verify_password(self._pending_ip, password)
+            if ok:
+                return self.async_create_entry(
+                    title=self._pending_title,
+                    data=self._entry_data(password),
+                )
+            errors["base"] = "invalid_auth"
+
+        return self.async_show_form(
+            step_id="password",
+            data_schema=vol.Schema({vol.Required(CONF_PASSWORD): str}),
+            errors=errors,
+            description_placeholders={
+                "name": self._pending_name or "myPV",
+                "ip": self._pending_ip or "",
+            },
+        )
+
+    async def async_step_reauth(
+        self, entry_data: Mapping[str, Any]
+    ) -> config_entries.ConfigFlowResult:
+        """Handle re-authentication when the stored password stops working."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Confirm re-authentication with a new password."""
+        entry = self._get_reauth_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            dev_ip = entry.data[DEV_IP]
+            ok, _name = await self._verify_password(dev_ip, user_input[CONF_PASSWORD])
+            if ok:
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data_updates={CONF_PASSWORD: user_input[CONF_PASSWORD]},
+                )
+            errors["base"] = "invalid_auth"
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema({vol.Required(CONF_PASSWORD): str}),
+            errors=errors,
+            description_placeholders={"name": entry.title},
         )

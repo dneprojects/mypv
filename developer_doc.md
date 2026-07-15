@@ -4,6 +4,16 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.5.0
+
+### Changes
+- **Transport moved onto the official `my-pv` library** (`requirements: ["my-pv==0.0.2"]`). A new `connection.py` subclasses the library's `MyPVHTTPConnection` / `MyPVHTTPSConnection` (`MypvHttpConnection` / `MypvHttpsConnection`) and adds the raw access the integration needs: `get_json()` returns `data.jsn` / `setup.jsn` **unmodified** (the library lowercases keys, which would break `volt_L2` etc.), and `get_text()` provides plain-text access for the `control.html` power steering the library does not expose. Requests are serialised per device via a per-connection `asyncio.Lock` (replacing the former single global lock). `MypvCommunicator` keeps the exact same public method surface (`data_update`, `setup_update`, `state_update`, `set_number`, `set_power`, `set_pid_power`, `set_control_mode`, `switch`, `activate_boost`, `check_ip`, `get_state_dict`), so `mypv_device.py`, `const.py` and every entity platform are unchanged. **Device values stay raw** — the library's value/config layer (`MyPVDevice` + bundled `configs`) is deliberately bypassed, so entity scaling (°C/10, Hz/1000, A/10) and unique ids are identical.
+- **Authentication.** The config flow probes the device through the library; if it redirects to HTTPS (`MyPVAuthenticationError`), a `password` step is shown and the password is stored in `entry.data[CONF_PASSWORD]`. Old HTTP-only firmware is detected as before and needs no password. A `reauth` / `reauth_confirm` flow updates the password if it later becomes invalid; at runtime an auth failure raises `ConfigEntryAuthFailed` to trigger it. Each device gets its own library connection (its own session/auth), and connections are closed on unload (`MypvCommunicator.async_close`).
+
+### Open / to verify
+- **`control.html` over HTTPS+auth is unverified against hardware.** On old HTTP firmware the control path is byte-for-byte unchanged; whether newer auth-firmware serves `control.html?power=…` over the authenticated HTTPS session must be confirmed on a real device.
+- **Tests need reseaming.** The suite mocks the aiohttp HTTP layer (`AiohttpClientMocker`), but the library uses its own `ClientSession`, so the mock seam moved. Tests must patch the connection layer (`create_connection` / `MypvHttpConnection` / `MypvHttpsConnection`) instead. Requires the Python 3.14 dev-container to run.
+
 ## v1.4.6
 
 ### Bug fixes
