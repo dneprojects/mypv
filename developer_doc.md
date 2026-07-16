@@ -4,9 +4,15 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
-## v1.6.3
+## v1.6.4
 
 ### Changes
+Runtime robustness, informed by reading the `my-pv==0.0.2` reference library (which the integration no longer depends on but which models the device's session behaviour). The library authenticates once in `open()` and then reuses the aiohttp `ClientSession` — i.e. relies on the **session cookie** the device sets at login — for every subsequent read/write; it never re-authenticates per request, and on any unexpected HTTP status (including `429`) it returns `{}` rather than crashing.
+
+- **Transient non-200 no longer crashes the poll.** `_request` now raises `MyPVAuthenticationError` on `401` and, for any other non-200 (e.g. a `429` rate limit), returns the **last cached body** for that read path (`self._cache`, keyed by path, populated on each 200 read with no query). Previously the non-JSON body was passed to `json.loads` → `JSONDecodeError` → `UpdateFailed` → all entities unavailable with no reauth prompt. With no cached value yet it is a transient `MyPVConnectionError`.
+- **Removed per-request re-authentication.** The `_reauthenticate` / `_get_once` / `_post_once` retry-on-401 added in v1.6.3 is gone; the connection logs in once (`open()`) and reuses the session like the library. This cuts `auth.jsn` traffic (the device rate-limits / locks out on frequent logins) and simplifies the read/write paths back to a single request.
+
+Note: the exact production trigger (a device `429` under sustained polling) was inferred from the library diff, not reproduced live; the fix is a robustness improvement regardless and mirrors the library's own handling.
 Two-phase transport model, verified on real `e0002410`. The earlier attempts to derive the transport during detection kept tripping over the device's grace window (after a login, `setup.jsn` reads stay open for a while, so a password-less probe is unreliable) and over a `sec_level 0 + password` device that serves `data.jsn`/`control.html` over HTTP but protects `setup.jsn` over HTTPS. The clean split:
 
 - **Phase 1 — detection (`config_flow._check_host`, simple).** A working HTTPS connection means **new firmware**, which always has a login password (it can only be changed, not removed): the integration's initial login opens the device's grace window so reads/writes work afterwards. So new firmware always routes to the **password step**; plain HTTP means **old firmware** (no password). `sec_level` is *not* read here — it needs the (grace-dependent, pre-login) `setup.jsn`, so it is deferred to runtime.

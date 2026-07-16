@@ -181,6 +181,30 @@ async def test_401_raises_auth_error_and_releases_response() -> None:
     assert session.responses[0].released is True
 
 
+async def test_non_200_serves_cached_body() -> None:
+    """A 429 (rate limit) returns the last good body instead of crashing."""
+    responses = iter(
+        [
+            _FakeResponse(status=200, body='{"a": 1}'),
+            _FakeResponse(status=429, body="Too Many Requests"),
+        ]
+    )
+    session = _FakeSession(lambda: next(responses))
+    conn = _connection(session)
+
+    assert await conn.get_json("/data.jsn") == {"a": 1}  # populates the cache
+    assert await conn.get_json("/data.jsn") == {"a": 1}  # 429 -> cached value
+
+
+async def test_non_200_without_cache_raises_connection_error() -> None:
+    """A 429 with no cached value yet is a transient connection error."""
+    session = _FakeSession(lambda: _FakeResponse(status=429, body="Too Many Requests"))
+    conn = _connection(session)
+
+    with pytest.raises(MyPVConnectionError):
+        await conn.get_json("/data.jsn")
+
+
 async def test_connection_error_is_mapped_and_closes() -> None:
     """A transport error maps to MyPVConnectionError and closes the connection."""
     session = _FakeSession(
