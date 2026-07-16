@@ -4,6 +4,11 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.6.1
+
+### Changes
+- **Self-healing transport on a post-setup encryption-mode change.** An already-configured entry stores its transport (`CONF_SSL` / `CONF_PASSWORD`); if the device's `sec_level` is later changed, the stored transport can no longer read (`mypv_dev.jsn` still answers over plain HTTP in every mode, so `open()` succeeds, but the first real read of `setup.jsn` is redirected → `MyPVConnectionError` → an endless `ConfigEntryNotReady` retry). `MypvCommunicator.initialize()` now heals this: `_setup_host()` opens + initialises via `_open_and_init()`, and on failure re-reads `sec_level` over password-less HTTPS (`_probe_sec_level()`, open in every mode) — `2` without a stored password raises `ConfigEntryAuthFailed` (reauth for the password); `1`/`2` while on plain HTTP upgrades to HTTPS and persists `CONF_SSL` (`_persist_https()`). It also covers the inverse: reads that *succeed* over HTTP while the device reports `sec_level ≥ 1` are upgraded to HTTPS too (otherwise `control.html` would be redirected). Connections expose `is_https` for the HTTP-vs-HTTPS decision. A wrong stored password still raises `ConfigEntryAuthFailed` from `open()` directly.
+
 ## v1.6.0
 
 ### Changes

@@ -119,6 +119,11 @@ class FakeConnection:
         return self._open
 
     @property
+    def is_https(self) -> bool:
+        """Return whether this connection uses HTTPS transport."""
+        return self._is_https
+
+    @property
     def mypv_dev(self) -> dict[str, Any] | None:
         """Return the device identification dict once open."""
         spec = self._spec

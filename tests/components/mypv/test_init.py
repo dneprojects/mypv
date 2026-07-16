@@ -7,7 +7,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.mypv import async_remove_config_entry_device
 from custom_components.mypv.const import COMM_HUB, CONF_HOSTS, DEV_IP, DOMAIN
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import ATTR_ENTITY_ID, CONF_PASSWORD
+from homeassistant.const import ATTR_ENTITY_ID, CONF_PASSWORD, CONF_SSL
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.setup import async_setup_component
@@ -84,6 +84,62 @@ async def test_setup_auth_required_starts_reauth(
         flow["context"]["source"] == "reauth"
         for flow in hass.config_entries.flow.async_progress_by_handler(DOMAIN)
     )
+
+
+async def test_setup_mode_change_to_password_starts_reauth(
+    hass: HomeAssistant,
+    mock_device: FakeWorld,
+) -> None:
+    """A plain-HTTP entry whose device now needs a password heals into reauth."""
+    # Entry was stored as plain HTTP (no password); the device is now mode 2.
+    spec = mock_device.spec()
+    spec.https = True
+    spec.http_reads_open = False
+    spec.sec_level = 2
+    spec.needs_auth = True
+    spec.password = "secret"
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=f"mypv_{MOCK_IP}",
+        data={DEV_IP: MOCK_IP, CONF_HOSTS: [MOCK_IP]},
+    )
+    entry.add_to_hass(hass)
+
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    assert any(
+        flow["context"]["source"] == "reauth"
+        for flow in hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    )
+
+
+async def test_setup_mode_change_to_https_upgrades(
+    hass: HomeAssistant,
+    mock_device: FakeWorld,
+) -> None:
+    """A plain-HTTP entry whose device now enforces HTTPS upgrades itself."""
+    # Entry was stored as plain HTTP; the device is now mode 1 (HTTPS, no auth).
+    spec = mock_device.spec()
+    spec.https = True
+    spec.http_reads_open = False
+    spec.sec_level = 1
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=f"mypv_{MOCK_IP}",
+        data={DEV_IP: MOCK_IP, CONF_HOSTS: [MOCK_IP]},
+    )
+    entry.add_to_hass(hass)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.LOADED
+    # The switch to HTTPS is persisted so the next start uses it directly.
+    assert entry.data[CONF_SSL] is True
 
 
 async def test_coordinator_update_failure(

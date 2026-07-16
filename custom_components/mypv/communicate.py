@@ -70,23 +70,119 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
         from .mypv_device import MpyDevice  # noqa: PLC0415
 
         for ip_str in self.hosts:
-            connection = create_connection(
-                ip_str, self.password, use_https=self.use_https
-            )
-            try:
-                opened = await connection.open()
-            except MyPVAuthenticationError as err:
-                await connection.close()
-                raise ConfigEntryAuthFailed(
-                    f"Authentication required for myPV device at {ip_str}"
-                ) from err
-            if not opened or not connection.mypv_dev:
-                await connection.close()
+            result = await self._setup_host(ip_str, MpyDevice)
+            if result is None:
                 continue
-            self.connections[ip_str] = connection
-            device = MpyDevice(self, ip_str, connection.mypv_dev)
+            _connection, device = result
             self.devices.append(device)
+
+    async def _setup_host(
+        self, ip_str: str, device_cls: type[MpyDevice]
+    ) -> tuple[MypvHttpConnection | MypvHttpsConnection, MpyDevice] | None:
+        """Open a connection and initialise the device, healing a mode change.
+
+        A device whose encryption mode changed after setup (e.g. a password was
+        enabled, or HTTP was switched to HTTPS) can no longer be read over the
+        stored transport. When that happens the current mode is re-detected from
+        ``sec_level`` and applied: a password-protected mode 2 without a stored
+        password starts reauth; a switch to HTTPS is applied and persisted.
+        """
+        connection, device = await self._open_and_init(
+            ip_str, self.password, self.use_https, device_cls
+        )
+
+        if connection is None:
+            # Stored transport can't read the device: re-detect its mode.
+            sec_level = await self._probe_sec_level(ip_str)
+            if sec_level == 2 and not self.password:
+                raise ConfigEntryAuthFailed(
+                    f"myPV device at {ip_str} now requires a password"
+                )
+            if sec_level in (1, 2) and not self.use_https:
+                self._persist_https()
+                connection, device = await self._open_and_init(
+                    ip_str, self.password, True, device_cls
+                )
+        elif (
+            device is not None
+            and not connection.is_https
+            and device.setup.get("sec_level") in (1, 2)
+        ):
+            # Reads work over HTTP but the device enforces HTTPS: control.html
+            # would be redirected, so upgrade the transport and persist the flag.
+            await connection.close()
+            self.connections.pop(ip_str, None)
+            self._persist_https()
+            connection, device = await self._open_and_init(
+                ip_str, self.password, True, device_cls
+            )
+
+        if connection is None or device is None:
+            return None
+        return connection, device
+
+    async def _open_and_init(
+        self,
+        ip_str: str,
+        password: str | None,
+        use_https: bool,
+        device_cls: type[MpyDevice],
+    ) -> tuple[MypvHttpConnection | MypvHttpsConnection, MpyDevice] | tuple[None, None]:
+        """Open a connection and run ``device.initialize()``.
+
+        Returns ``(None, None)`` when the device is unreachable or the transport
+        cannot read it (so the caller can re-detect and heal). A rejected login
+        raises ``ConfigEntryAuthFailed`` to route to reauth.
+        """
+        connection = create_connection(ip_str, password, use_https=use_https)
+        try:
+            opened = await connection.open()
+        except MyPVAuthenticationError as err:
+            await connection.close()
+            raise ConfigEntryAuthFailed(
+                f"Authentication required for myPV device at {ip_str}"
+            ) from err
+        if not opened or not connection.mypv_dev:
+            await connection.close()
+            return None, None
+        # Register before initialising: the device reads through this connection
+        # via ``self.connections[ip]``.
+        self.connections[ip_str] = connection
+        device = device_cls(self, ip_str, connection.mypv_dev)
+        try:
             await device.initialize()
+        except MyPVConnectionError:
+            await connection.close()
+            self.connections.pop(ip_str, None)
+            return None, None
+        return connection, device
+
+    async def _probe_sec_level(self, ip_str: str) -> int | None:
+        """Read ``setup.jsn``'s ``sec_level`` over password-less HTTPS.
+
+        HTTPS reads stay open in every encryption mode, so this reveals the
+        current mode (0/1/2) even when the stored transport can no longer read.
+        """
+        probe = create_connection(ip_str, None, use_https=True)
+        try:
+            if await probe.open():
+                setup = await probe.get_json("/setup.jsn")
+                sec_level = setup.get("sec_level")
+                return sec_level if isinstance(sec_level, int) else None
+        except (MyPVAuthenticationError, MyPVConnectionError):
+            pass
+        finally:
+            await probe.close()
+        return None
+
+    def _persist_https(self) -> None:
+        """Remember, and store on the entry, that the device now needs HTTPS."""
+        self.use_https = True
+        assert self.config_entry is not None
+        self.hass.config_entries.async_update_entry(
+            self.config_entry,
+            data={**self.config_entry.data, CONF_SSL: True},
+        )
 
     async def async_close(self) -> None:
         """Close all device connections (called on unload)."""

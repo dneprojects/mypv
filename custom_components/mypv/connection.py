@@ -106,6 +106,11 @@ class _Connection:
         """Return whether the session is currently open."""
         return self._session is not None and not self._session.closed
 
+    @property
+    def is_https(self) -> bool:
+        """Return whether this connection uses (encrypted) HTTPS transport."""
+        return self._PROTOCOL == "https"
+
     async def close(self) -> None:
         """Close the session if it is open."""
         if self._session is not None:

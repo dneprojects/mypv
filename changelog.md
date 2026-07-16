@@ -3,10 +3,15 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.6.1
+- Self-healing when the device's encryption mode changes after setup: re-detects the mode and asks for the password or switches to HTTPS instead of failing with "Error connecting".
+
 ## v1.6.0
-- **Full support for the encryption modes of newer firmware (`e0002410`):** HTTP, HTTPS without password, and HTTPS with password are now detected automatically at setup. Fixes login with passwords that contain special characters (e.g. `!`) and device control (setting values, switches, power, boost) not taking effect. Verified on real hardware.
-- New **"Encryption"** sensor showing the active mode (HTTP / HTTPS / HTTPS+PW).
-- Device communication no longer depends on the external `my-pv` library (removed as a dependency); the transport is now built in.
+- Auto-detects all firmware encryption modes (HTTP / HTTPS / HTTPS+password) at setup (`e0002410`).
+- Fixes login with special characters (e.g. `!`) in the password.
+- Fixes device control (values, switches, power, boost) not taking effect on newer firmware.
+- New "Encryption" sensor showing the active mode.
+- Removed the external `my-pv` library dependency; transport is now built in.
 
 ## v1.5.0
 - Device communication now runs through the official my-pv library (entities and power control unchanged).
