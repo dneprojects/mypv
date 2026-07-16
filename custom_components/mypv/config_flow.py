@@ -6,7 +6,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_PASSWORD, CONF_SSL
+from homeassistant.const import CONF_PASSWORD
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 
@@ -43,8 +43,6 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._pending_hosts: list[str] = []
         self._pending_title: str = ""
         self._pending_name: str | None = None
-        # Whether the detected device speaks HTTPS (new firmware, mode 0/1).
-        self._pending_use_https: bool = False
 
     def _all_hosts_in_configuration_exist(self, ip_list: list[str]) -> bool:
         """Return True if all hosts found already exist in configuration."""
@@ -54,68 +52,31 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Check a myPV device and detect its transport.
 
         Returns ``(reachable, host_list, device_name, auth_required)``.
-        ``auth_required`` is True when the firmware requires a login password
-        (encryption mode 2). As a side effect ``_pending_use_https`` is set when
-        the device speaks HTTPS without a password (new firmware, mode 1).
 
-        The encryption mode is read straight from ``setup.jsn``'s ``sec_level``
-        (``0`` = HTTP, ``1`` = HTTPS, ``2`` = HTTPS + password). ``mypv_dev.jsn``
-        is served over plain HTTP in every mode, so it only proves reachability
-        and gives the name; ``setup.jsn`` is readable over HTTP for modes 0/1
-        (and old firmware) and over HTTPS without a password in every mode, so
-        trying HTTP then HTTPS covers all firmware.
+        HTTPS is tried first. A working HTTPS connection means new firmware, and
+        new firmware always has a login password (it cannot be removed, only
+        changed): the integration's initial login opens the device's grace
+        window so reads and writes work afterwards, so a password is always
+        required (``auth_required`` True). Plain HTTP means old firmware without
+        authentication (no password). ``sec_level`` is not needed here -- it is
+        read at runtime, after the login, from ``setup.jsn``.
         """
-        self._pending_use_https = False
+        https = create_connection(dev_ip, None, use_https=True)
+        if await self._try_open(https):
+            name = self._device_name(https)
+            await https.close()
+            return True, [dev_ip], name, True
+        await https.close()
 
-        name = "myPV"
-        reachable = False
-        setup: dict[str, Any] | None = None
-
+        # No HTTPS server: old firmware. Use plain HTTP for the whole exchange.
         http = create_connection(dev_ip, None)
         if await self._try_open(http):
-            reachable = True
             name = self._device_name(http)
-            setup = await self._try_get(http, "/setup.jsn")
+            await http.close()
+            return True, [dev_ip], name, False
         await http.close()
 
-        # HTTP read failed (mode 2 redirects it, or HTTP is unreachable): read
-        # setup.jsn over HTTPS, which stays open without a password everywhere.
-        if setup is None:
-            https = create_connection(dev_ip, None, use_https=True)
-            if await self._try_open(https):
-                if not reachable:
-                    reachable = True
-                    name = self._device_name(https)
-                setup = await self._try_get(https, "/setup.jsn")
-            await https.close()
-
-        if not reachable:
-            return False, [], "myPV", False
-
-        if setup is None:
-            # Reachable (mypv_dev.jsn answers in every mode) but the config is
-            # unreadable over every password-less channel. The device gates its
-            # data behind a login -- e.g. a freshly updated device still in its
-            # locked initial state, awaiting a password. Route to the password
-            # step instead of silently failing later at setup.
-            return True, [dev_ip], name, True
-
-        sec_level = setup.get("sec_level")
-        if sec_level == 2:
-            # HTTPS with a login password (encryption mode 2).
-            return True, [dev_ip], name, True
-        # Old firmware and mode 0 stay on HTTP; mode 1 (encrypted, no password)
-        # uses the device's HTTPS server.
-        self._pending_use_https = sec_level is not None and sec_level >= 1
-        return True, [dev_ip], name, False
-
-    @staticmethod
-    async def _try_get(connection: Any, path: str) -> dict[str, Any] | None:
-        """Read a JSON endpoint, returning None when it is unavailable."""
-        try:
-            return await connection.get_json(path)
-        except (MyPVAuthenticationError, MyPVConnectionError):
-            return None
+        return False, [], "myPV", False
 
     @staticmethod
     async def _try_open(connection: Any) -> bool:
@@ -153,8 +114,6 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         }
         if password:
             data[CONF_PASSWORD] = password
-        if self._pending_use_https:
-            data[CONF_SSL] = True
         return data
 
     async def _create_or_auth(

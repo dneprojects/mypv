@@ -127,6 +127,9 @@ class FakeConnection:
         """Return whether this connection uses HTTPS transport."""
         return self._is_https
 
+    def set_sec_level(self, sec_level: Any) -> None:
+        """Record the device's encryption mode (no-op in the fake transport)."""
+
     @property
     def mypv_dev(self) -> dict[str, Any] | None:
         """Return the device identification dict once open."""

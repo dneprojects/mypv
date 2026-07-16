@@ -4,6 +4,17 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.6.3
+
+### Changes
+Two-phase transport model, verified on real `e0002410`. The earlier attempts to derive the transport during detection kept tripping over the device's grace window (after a login, `setup.jsn` reads stay open for a while, so a password-less probe is unreliable) and over a `sec_level 0 + password` device that serves `data.jsn`/`control.html` over HTTP but protects `setup.jsn` over HTTPS. The clean split:
+
+- **Phase 1 — detection (`config_flow._check_host`, simple).** A working HTTPS connection means **new firmware**, which always has a login password (it can only be changed, not removed): the integration's initial login opens the device's grace window so reads/writes work afterwards. So new firmware always routes to the **password step**; plain HTTP means **old firmware** (no password). `sec_level` is *not* read here — it needs the (grace-dependent, pre-login) `setup.jsn`, so it is deferred to runtime.
+- **Phase 2 — runtime (respects `sec_level`).** After the login, `setup_update()` reads `setup.jsn` (over the connection's own protocol -> HTTPS on new firmware) and calls `connection.set_sec_level()`. The connection then routes **per endpoint** via `_scheme_for()`: `sec_level 0` serves `data.jsn`/`control.html` over plain HTTP, everything else (and `setup.jsn` + `auth.jsn`) over HTTPS; `sec_level 1`/`2` use HTTPS throughout. `setup.jsn` is the deliberate exception (`_HTTP_IN_SEC0` excludes it) because the firmware protects it over HTTPS even in HTTP mode.
+- **`sec_level 1` vs `2`.** A `401` on a read or a `setup.jsn` write triggers a single `_reauthenticate()` (re-run `auth.jsn`) and retry before surfacing as an auth error — covers a shorter grace window in mode 2; a no-op under the endless grace of modes 0/1.
+- **Self-heal (`_setup_host`) simplified to match.** An old plain-HTTP entry (no password) whose device is now new firmware can no longer read it; if the device speaks HTTPS and no password is stored, it routes to reauth. The former `sec_level`-probing / no-password-HTTPS-upgrade / `_persist_https()` paths are gone. `_open_and_init()` now also maps a `MyPVAuthenticationError` raised during `device.initialize()` (a read `401` that re-auth could not satisfy) to `ConfigEntryAuthFailed`.
+- `CONF_SSL` is no longer written by the config flow (a stored password implies HTTPS; the runtime transport follows `sec_level`); it is still read for backwards compatibility with pre-1.6.3 entries.
+
 ## v1.6.2
 
 ### Changes

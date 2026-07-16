@@ -6,7 +6,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.mypv.const import CONF_HOSTS, DEV_IP, DOMAIN
 from homeassistant.config_entries import SOURCE_DHCP, SOURCE_DISCOVERY, SOURCE_USER
-from homeassistant.const import CONF_PASSWORD, CONF_SSL
+from homeassistant.const import CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
@@ -39,15 +39,22 @@ async def test_user_flow_success(
     assert len(mock_setup_entry.mock_calls) == 1
 
 
-async def test_user_flow_https_no_password(
+async def test_user_flow_new_firmware_always_asks_password(
     hass: HomeAssistant,
     mock_device: FakeWorld,
     mock_setup_entry: AsyncMock,
 ) -> None:
-    """A HTTPS-without-password device (encryption mode 1) stores the ssl flag."""
+    """New firmware (HTTPS) always routes to the password step.
+
+    A password always exists on new firmware (it cannot be removed, only
+    changed), so even a device that reports sec_level 0/1 ("HTTPS without
+    password") must be logged in to. The device key / password is stored.
+    """
     spec = mock_device.spec()
-    spec.https = True  # new firmware serves HTTPS, no password
-    spec.sec_level = 1  # encryption mode 1
+    spec.https = True  # new firmware speaks HTTPS
+    spec.sec_level = 1  # even "HTTPS without password" mode
+    spec.needs_auth = True
+    spec.password = "devicekey"
 
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
@@ -55,13 +62,19 @@ async def test_user_flow_https_no_password(
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {DEV_IP: MOCK_IP}
     )
-    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "password"
 
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_PASSWORD: "devicekey"}
+    )
+    await hass.async_block_till_done()
     assert result["type"] is FlowResultType.CREATE_ENTRY
+    # A password implies HTTPS; no separate CONF_SSL is stored.
     assert result["data"] == {
         DEV_IP: MOCK_IP,
         CONF_HOSTS: [MOCK_IP],
-        CONF_SSL: True,
+        CONF_PASSWORD: "devicekey",
     }
 
 

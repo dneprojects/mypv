@@ -7,7 +7,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.mypv import async_remove_config_entry_device
 from custom_components.mypv.const import COMM_HUB, CONF_HOSTS, DEV_IP, DOMAIN
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import ATTR_ENTITY_ID, CONF_PASSWORD, CONF_SSL
+from homeassistant.const import ATTR_ENTITY_ID, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.setup import async_setup_component
@@ -116,15 +116,19 @@ async def test_setup_mode_change_to_password_starts_reauth(
     )
 
 
-async def test_setup_mode_change_to_https_upgrades(
+async def test_setup_old_http_entry_new_firmware_starts_reauth(
     hass: HomeAssistant,
     mock_device: FakeWorld,
 ) -> None:
-    """A plain-HTTP entry whose device now enforces HTTPS upgrades itself."""
-    # Entry was stored as plain HTTP; the device is now mode 1 (HTTPS, no auth).
+    """An old plain-HTTP entry whose device is now new firmware heals into reauth.
+
+    New firmware always needs a login, so a stored HTTP entry without a password
+    can no longer read the device -> the self-heal routes to reauth instead of
+    silently creating a password-less HTTPS connection.
+    """
     spec = mock_device.spec()
-    spec.https = True
-    spec.http_reads_open = False
+    spec.https = True  # device now speaks HTTPS (new firmware)
+    spec.http_reads_open = False  # setup.jsn is no longer served over plain HTTP
     spec.sec_level = 1
 
     entry = MockConfigEntry(
@@ -134,12 +138,14 @@ async def test_setup_mode_change_to_https_upgrades(
     )
     entry.add_to_hass(hass)
 
-    assert await hass.config_entries.async_setup(entry.entry_id)
+    assert not await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert entry.state is ConfigEntryState.LOADED
-    # The switch to HTTPS is persisted so the next start uses it directly.
-    assert entry.data[CONF_SSL] is True
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    assert any(
+        flow["context"]["source"] == "reauth"
+        for flow in hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    )
 
 
 async def test_coordinator_update_failure(

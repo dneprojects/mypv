@@ -79,42 +79,22 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
     async def _setup_host(
         self, ip_str: str, device_cls: type[MpyDevice]
     ) -> tuple[MypvHttpConnection | MypvHttpsConnection, MpyDevice] | None:
-        """Open a connection and initialise the device, healing a mode change.
+        """Open a connection and initialise the device, healing a firmware change.
 
-        A device whose encryption mode changed after setup (e.g. a password was
-        enabled, or HTTP was switched to HTTPS) can no longer be read over the
-        stored transport. When that happens the current mode is re-detected from
-        ``sec_level`` and applied: a password-protected mode 2 without a stored
-        password starts reauth; a switch to HTTPS is applied and persisted.
+        An entry set up on old firmware (plain HTTP, no password) whose device is
+        now on new firmware can no longer be read over the stored transport. If
+        the device then speaks HTTPS and no password is stored, a login is
+        required -> start reauth so the user can supply it.
         """
         connection, device = await self._open_and_init(
             ip_str, self.password, self.use_https, device_cls
         )
 
-        if connection is None:
-            # Stored transport can't read the device: re-detect its mode.
-            sec_level = await self._probe_sec_level(ip_str)
-            if sec_level == 2 and not self.password:
-                raise ConfigEntryAuthFailed(
-                    f"myPV device at {ip_str} now requires a password"
-                )
-            if sec_level in (1, 2) and not self.use_https:
-                self._persist_https()
-                connection, device = await self._open_and_init(
-                    ip_str, self.password, True, device_cls
-                )
-        elif (
-            device is not None
-            and not connection.is_https
-            and device.setup.get("sec_level") in (1, 2)
+        if connection is None and not self.password and await self._speaks_https(
+            ip_str
         ):
-            # Reads work over HTTP but the device enforces HTTPS: control.html
-            # would be redirected, so upgrade the transport and persist the flag.
-            await connection.close()
-            self.connections.pop(ip_str, None)
-            self._persist_https()
-            connection, device = await self._open_and_init(
-                ip_str, self.password, True, device_cls
+            raise ConfigEntryAuthFailed(
+                f"myPV device at {ip_str} now requires a password"
             )
 
         if connection is None or device is None:
@@ -131,7 +111,7 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
         """Open a connection and run ``device.initialize()``.
 
         Returns ``(None, None)`` when the device is unreachable or the transport
-        cannot read it (so the caller can re-detect and heal). A rejected login
+        cannot read it (so the caller can heal). A rejected or missing login
         raises ``ConfigEntryAuthFailed`` to route to reauth.
         """
         connection = create_connection(ip_str, password, use_https=use_https)
@@ -151,38 +131,27 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
         device = device_cls(self, ip_str, connection.mypv_dev)
         try:
             await device.initialize()
+        except MyPVAuthenticationError as err:
+            await connection.close()
+            self.connections.pop(ip_str, None)
+            raise ConfigEntryAuthFailed(
+                f"Authentication required for myPV device at {ip_str}"
+            ) from err
         except MyPVConnectionError:
             await connection.close()
             self.connections.pop(ip_str, None)
             return None, None
         return connection, device
 
-    async def _probe_sec_level(self, ip_str: str) -> int | None:
-        """Read ``setup.jsn``'s ``sec_level`` over password-less HTTPS.
-
-        HTTPS reads stay open in every encryption mode, so this reveals the
-        current mode (0/1/2) even when the stored transport can no longer read.
-        """
+    async def _speaks_https(self, ip_str: str) -> bool:
+        """Return True if the device answers over HTTPS (new firmware)."""
         probe = create_connection(ip_str, None, use_https=True)
         try:
-            if await probe.open():
-                setup = await probe.get_json("/setup.jsn")
-                sec_level = setup.get("sec_level")
-                return sec_level if isinstance(sec_level, int) else None
+            return await probe.open()
         except (MyPVAuthenticationError, MyPVConnectionError):
-            pass
+            return False
         finally:
             await probe.close()
-        return None
-
-    def _persist_https(self) -> None:
-        """Remember, and store on the entry, that the device now needs HTTPS."""
-        self.use_https = True
-        assert self.config_entry is not None
-        self.hass.config_entries.async_update_entry(
-            self.config_entry,
-            data={**self.config_entry.data, CONF_SSL: True},
-        )
 
     async def async_close(self) -> None:
         """Close all device connections (called on unload)."""
@@ -218,8 +187,16 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
         return await self._connection(device).get_json("/data.jsn")
 
     async def setup_update(self, device: MpyDevice) -> dict[str, Any]:
-        """Update device setup info."""
-        return await self._connection(device).get_json("/setup.jsn")
+        """Update device setup info and refresh the connection's encryption mode.
+
+        ``setup.jsn`` is read over the connection's own protocol (HTTPS on new
+        firmware) and its ``sec_level`` then selects HTTP vs HTTPS for the other
+        endpoints (``data.jsn`` / ``control.html``) at runtime.
+        """
+        connection = self._connection(device)
+        setup = await connection.get_json("/setup.jsn")
+        connection.set_sec_level(setup.get("sec_level"))
+        return setup
 
     async def state_update(self, device: MpyDevice) -> bool:
         """Update control state."""

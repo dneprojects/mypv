@@ -60,6 +60,10 @@ class _Connection:
 
     _PROTOCOL: str = "http"
     _SSL: bool = True
+    # Endpoints served over plain HTTP when the device is in HTTP mode
+    # (``sec_level`` 0). ``setup.jsn`` and the login stay on HTTPS even then --
+    # the firmware protects the config, so those are the exception.
+    _HTTP_IN_SEC0 = frozenset({"/data.jsn", "/control.html"})
 
     def __init__(self, host: str) -> None:
         """Store the host and prepare the per-device request lock."""
@@ -67,9 +71,27 @@ class _Connection:
         self._session: ClientSession | None = None
         self._mypv_dev: dict[str, Any] | None = None
         self._io_lock = asyncio.Lock()
+        # The device's encryption mode, learned from setup.jsn after connecting;
+        # it selects the transport per endpoint at runtime.
+        self._sec_level: int | None = None
 
-    def _url(self, path: str, query: str = "") -> str:
-        return urlunsplit([self._PROTOCOL, self._host, path, query, None])
+    def set_sec_level(self, sec_level: Any) -> None:
+        """Record the device's encryption mode (from ``setup.jsn``)."""
+        self._sec_level = sec_level if isinstance(sec_level, int) else None
+
+    def _scheme_for(self, path: str) -> tuple[str, bool]:
+        """Return ``(protocol, ssl)`` for a path, honouring the encryption mode.
+
+        The transport follows ``sec_level``: mode 0 uses plain HTTP, modes 1/2
+        use HTTPS. ``setup.jsn`` (and the login) always use the connection's own
+        protocol, so on new firmware they stay on HTTPS even in mode 0.
+        """
+        if self._sec_level == 0 and path in self._HTTP_IN_SEC0:
+            return "http", True  # ssl is irrelevant over http
+        return self._PROTOCOL, self._SSL
+
+    def _url(self, path: str, query: str = "", protocol: str | None = None) -> str:
+        return urlunsplit([protocol or self._PROTOCOL, self._host, path, query, None])
 
     async def open(self) -> bool:
         """Open a fresh session, read the device identification, authenticate.
@@ -123,19 +145,39 @@ class _Connection:
         return self._mypv_dev
 
     async def _request(self, path: str, query: dict[str, Any] | None) -> str:
-        """Open if needed and perform a serialised GET, returning the body."""
+        """Open if needed and perform a serialised GET, returning the body.
+
+        A 401 (the login grace expired, encryption mode 2) triggers a single
+        re-authentication and retry before it is surfaced as an auth error.
+        """
         if not self.is_open() and not await self.open():
             raise MyPVConnectionError
-        assert self._session is not None
-        url = self._url(path, urlencode(query or {}))
+        protocol, ssl = self._scheme_for(path)
+        url = self._url(path, urlencode(query or {}), protocol)
         try:
-            async with self._session.get(url, ssl=self._SSL) as response:
-                if response.status == 401:
+            text = await self._get_once(url, ssl)
+            if text is None:
+                if not await self._reauthenticate():
                     raise MyPVAuthenticationError
-                return await response.text()
+                text = await self._get_once(url, ssl)
+                if text is None:
+                    raise MyPVAuthenticationError
         except (ClientError, TimeoutError) as exc:
             await self.close()
             raise MyPVConnectionError from exc
+        return text
+
+    async def _get_once(self, url: str, ssl: bool) -> str | None:
+        """GET a URL once; ``None`` on 401, otherwise the response body."""
+        assert self._session is not None
+        async with self._session.get(url, ssl=ssl) as response:
+            if response.status == 401:
+                return None
+            return await response.text()
+
+    async def _reauthenticate(self) -> bool:
+        """Re-run the login on the open session (base: no credentials)."""
+        return False
 
     async def get_json(
         self, path: str, query: dict[str, Any] | None = None
@@ -202,26 +244,47 @@ class MypvHttpsConnection(_Connection):
             return True
         raise MyPVAuthenticationError
 
+    async def _reauthenticate(self) -> bool:
+        """Re-run the ``auth.jsn`` login on the open session (mode-2 grace)."""
+        if not self._pw or self._session is None:
+            return False
+        try:
+            return await self._authenticate(self._session)
+        except MyPVAuthenticationError:
+            return False
+
     async def send(self, path: str, params: dict[str, Any]) -> str:
-        """Write config over HTTPS: POST, attaching the password only when set."""
+        """Write config over HTTPS: POST, attaching the password only when set.
+
+        ``setup.jsn`` writes always use HTTPS (the firmware protects the config
+        even in HTTP mode). A 401 triggers a single re-auth and retry.
+        """
         async with self._io_lock:
             if not self.is_open() and not await self.open():
                 raise MyPVConnectionError
-            assert self._session is not None
             body = _encode_form({**params, "pw": self._pw} if self._pw else params)
             try:
-                async with self._session.post(
-                    self._url(path),
-                    data=body,
-                    headers=_FORM_HEADERS,
-                    ssl=self._SSL,
-                ) as response:
-                    if response.status == 401:
+                text = await self._post_once(path, body)
+                if text is None:
+                    if not await self._reauthenticate():
                         raise MyPVAuthenticationError
-                    return await response.text()
+                    text = await self._post_once(path, body)
+                    if text is None:
+                        raise MyPVAuthenticationError
             except (ClientError, TimeoutError) as exc:
                 await self.close()
                 raise MyPVConnectionError from exc
+            return text
+
+    async def _post_once(self, path: str, body: str) -> str | None:
+        """POST a body once; ``None`` on 401, otherwise the response body."""
+        assert self._session is not None
+        async with self._session.post(
+            self._url(path), data=body, headers=_FORM_HEADERS, ssl=self._SSL
+        ) as response:
+            if response.status == 401:
+                return None
+            return await response.text()
 
 
 def create_connection(
