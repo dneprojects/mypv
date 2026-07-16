@@ -92,7 +92,15 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if not reachable:
             return False, [], "myPV", False
 
-        sec_level = setup.get("sec_level") if setup else None
+        if setup is None:
+            # Reachable (mypv_dev.jsn answers in every mode) but the config is
+            # unreadable over every password-less channel. The device gates its
+            # data behind a login -- e.g. a freshly updated device still in its
+            # locked initial state, awaiting a password. Route to the password
+            # step instead of silently failing later at setup.
+            return True, [dev_ip], name, True
+
+        sec_level = setup.get("sec_level")
         if sec_level == 2:
             # HTTPS with a login password (encryption mode 2).
             return True, [dev_ip], name, True

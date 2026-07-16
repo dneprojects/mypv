@@ -4,6 +4,11 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.6.2
+
+### Changes
+- **A reachable-but-unreadable device routes to the password step instead of failing at setup.** `mypv_dev.jsn` (the discovery/identity beacon) answers over plain HTTP in *every* state, including a device still locked in its initial state after a firmware update — but `setup.jsn`/`data.jsn` are gated behind a login there, so `sec_level` cannot be read over any password-less channel. `_check_host` previously fell through to `auth_required=False` in that case (no password prompt → the config entry was created HTTP-only → setup then raised `ConfigEntryNotReady` "No myPV device responded"). It now returns `auth_required=True` whenever the device is reachable but `setup` came back `None` from both the HTTP and the password-less HTTPS probe, so the user gets the password step. The `password` step description also tells the user to set the initial password on the device's own web interface (initial password = device key) first. `sec_level 0` with open HTTP reads is unaffected: `setup.jsn` reads there, `sec_level` is `0`, and no auth flow is triggered.
+
 ## v1.6.1
 
 ### Changes

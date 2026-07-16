@@ -3,6 +3,9 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.6.2
+- A reachable device whose configuration cannot be read (e.g. locked after a firmware update) now prompts for the password instead of failing silently with "No myPV device responded".
+
 ## v1.6.1
 - Self-healing when the device's encryption mode changes after setup: re-detects the mode and asks for the password or switches to HTTPS instead of failing with "Error connecting".
 

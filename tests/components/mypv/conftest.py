@@ -48,6 +48,10 @@ class DeviceSpec:
     sec_level: int | None = None
     needs_auth: bool = False
     password: str | None = None
+    # Protected reads (setup.jsn/data.jsn) require the password on every channel
+    # -- models a freshly updated device still locked in its initial state, which
+    # answers only mypv_dev.jsn until a password is supplied.
+    reads_require_auth: bool = False
     # When set, every get_json/get_text raises this (the device answers
     # identification but not data — models a mid-session drop-out).
     error: Exception | None = None
@@ -143,6 +147,15 @@ class FakeConnection:
             and path != "/mypv_dev.jsn"
         ):
             raise MyPVConnectionError
+        # A locked device gates protected reads behind the password on every
+        # channel; only a connection carrying the right password may read them.
+        if (
+            spec is not None
+            and spec.reads_require_auth
+            and path != "/mypv_dev.jsn"
+            and self._password != spec.password
+        ):
+            raise MyPVAuthenticationError
         self._record(path, query)
         payload = self._spec.json[path]
         if path == "/setup.jsn" and spec is not None and spec.sec_level is not None:

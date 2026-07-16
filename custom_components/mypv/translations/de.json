@@ -15,7 +15,7 @@
       },
       "password": {
         "title": "myPV-Authentifizierung",
-        "description": "Das Gerät {name} unter der IP {ip} benötigt ein Passwort.",
+        "description": "Das Gerät {name} unter der IP {ip} benötigt ein Passwort. Falls du gerade die Geräte-Firmware aktualisiert hast, vergib zuerst auf der Weboberfläche des Geräts ein Passwort (das Erst-Passwort ist der Device-Key) und gib es dann hier ein.",
         "data": {
           "password": "Passwort"
         }

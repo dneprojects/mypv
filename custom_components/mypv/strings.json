@@ -15,7 +15,7 @@
       },
       "password": {
         "title": "myPV authentication",
-        "description": "The {name} at {ip} requires a password.",
+        "description": "The {name} at {ip} requires a password. If you just updated the device firmware, first set a password on the device's own web interface (the initial password is the device key), then enter it here.",
         "data": {
           "password": "Password"
         }

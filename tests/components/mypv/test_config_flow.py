@@ -113,6 +113,46 @@ async def test_user_flow_already_configured(
     assert result["errors"] == {DEV_IP: "host_exists"}
 
 
+async def test_user_flow_locked_device_requires_password(
+    hass: HomeAssistant,
+    mock_device: FakeWorld,
+    mock_setup_entry: AsyncMock,
+) -> None:
+    """A reachable device whose config is unreadable routes to the password step.
+
+    Models a freshly updated device still locked in its initial state: it answers
+    mypv_dev.jsn (so discovery finds it) but gates setup.jsn behind a login on
+    every channel, so the encryption mode cannot be read.
+    """
+    spec = mock_device.spec()
+    spec.https = True
+    spec.http_reads_open = False  # HTTP reads redirected
+    spec.reads_require_auth = True  # HTTPS reads also gated (no sec_level readable)
+    spec.needs_auth = True
+    spec.password = "devicekey"
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {DEV_IP: MOCK_IP}
+    )
+    # Not a silent "no myPV device responded": the user is asked for a password.
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "password"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_PASSWORD: "devicekey"}
+    )
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {
+        DEV_IP: MOCK_IP,
+        CONF_HOSTS: [MOCK_IP],
+        CONF_PASSWORD: "devicekey",
+    }
+
+
 async def test_user_flow_requires_password(
     hass: HomeAssistant,
     mock_device: FakeWorld,
