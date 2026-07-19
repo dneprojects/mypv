@@ -3,6 +3,9 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.6.5
+- Fixed the boost buttons ("Start Boost" / "Stop Boost") and the power controls disappearing after the update to 1.6.4: a device answering the status read with an unusual HTTP status is accepted again as long as it sends a usable body.
+
 ## v1.6.4
 - Entities no longer drop to "unavailable" on a transient device rate-limit (HTTP 429) response: the last values are kept, matching the reference library.
 - The device is logged in to once and the session reused, instead of re-authenticating per request — fewer logins, no lockout risk.

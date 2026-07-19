@@ -4,6 +4,17 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.6.5
+
+### Bug fixes
+- **Boost buttons and power controls vanished after 1.6.4 (regression).** v1.6.4 turned every non-200 read into a `MyPVConnectionError`. On the `control.html` status read that is fatal in a way that is invisible in the logs: `MpyDevice.initialize()` calls `state_update()` *before* `init_entities()`, `state_update()` catches `MyPVConnectionError` and latches `control_enabled = False` (`communicate.py`), and `init_entities()` gates the boost buttons and the power `number` entities on that flag (`mypv_device.py`). Everything fed from `setup.jsn` — including the `bstmode` "Enable Boost Mode" switch, which lives in `SETUP_TYPES` and is built in a separate, ungated loop — survives. Reported symptom (three AC-THORs, unchanged config, 1.6.3 fine / 1.6.4 broken): switch present, `button.start_boost` / `button.stop_boost` gone. That split falls exactly along the `control_enabled` gate, not along "boost-related", which is what identified the mechanism.
+- **`_request` now accepts a response that is a `200` *or* carries a non-empty body.** Embedded myPV firmware answers some endpoints with a sloppy status while the payload is perfectly good — the suspected trigger is the *parameter-less* `control.html` read (`state_update` is the only caller without query args; commands always pass some). The status is a channel independent of the body, and up to 1.6.3 the transport ignored it entirely, which is why this never surfaced before. Precedence on a non-200 is now: cached body (keeps the v1.6.4 transient-`429` protection) → non-empty body (v1.6.3 behaviour) → `MyPVConnectionError`. Only `200` bodies are cached, so an error page can never poison the cache and later be served as device state.
+- Note the parser is deliberately unbreakable here: `get_state_dict` only picks `key=value` out of lines not starting with `<`, so even a useless body yields an empty dict rather than an exception — under 1.6.3 that still left `control_enabled` `True` and the buttons in place. The boost command itself is a *different* request (`control.html` **with** query args), so it may well have been working all along even where the status read was not.
+
+### Open
+- The exact HTTP status the reporter's AC-THOR returns is still unknown (no log yet); `400`/`404` on the parameter-less read are the working hypotheses. Redirects are ruled out (aiohttp follows them), as is a malformed status line (that raises `ClientError`, which already failed identically in 1.6.3). If 1.6.5 does not fix it, the next datum needed is the raw `curl -sk -D - http://<IP>/control.html` output.
+- The deeper design issue is untouched by choice: entity *existence* is still decided by a single read at setup time, so any future transport hiccup can strip the control entities again. Decoupling capability from runtime health (or retrying before latching `control_enabled`) remains the structural fix.
+
 ## v1.6.4
 
 ### Changes

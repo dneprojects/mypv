@@ -196,13 +196,42 @@ async def test_non_200_serves_cached_body() -> None:
     assert await conn.get_json("/data.jsn") == {"a": 1}  # 429 -> cached value
 
 
-async def test_non_200_without_cache_raises_connection_error() -> None:
-    """A 429 with no cached value yet is a transient connection error."""
-    session = _FakeSession(lambda: _FakeResponse(status=429, body="Too Many Requests"))
+async def test_non_200_with_intact_body_is_used() -> None:
+    """A non-200 carrying a usable body is accepted (sloppy firmware status).
+
+    A parameter-less ``control.html`` read is answered with a non-200 by some
+    firmware while the state payload itself is fine; rejecting it would disable
+    the control entities (boost buttons, power) for the whole entry.
+    """
+    session = _FakeSession(lambda: _FakeResponse(status=404, body="power=1500\n"))
+    conn = _connection(session)
+
+    assert await conn.get_text("/control.html") == "power=1500\n"
+
+
+async def test_non_200_with_empty_body_raises_connection_error() -> None:
+    """A non-200 with nothing usable and no cache is a connection error."""
+    session = _FakeSession(lambda: _FakeResponse(status=429, body="   "))
     conn = _connection(session)
 
     with pytest.raises(MyPVConnectionError):
         await conn.get_json("/data.jsn")
+
+
+async def test_non_200_body_is_not_cached() -> None:
+    """An error-page body must never be served later as if it were state."""
+    responses = iter(
+        [
+            _FakeResponse(status=404, body="power=1500\n"),
+            _FakeResponse(status=429, body="  "),
+        ]
+    )
+    session = _FakeSession(lambda: next(responses))
+    conn = _connection(session)
+
+    assert await conn.get_text("/control.html") == "power=1500\n"
+    with pytest.raises(MyPVConnectionError):
+        await conn.get_text("/control.html")
 
 
 async def test_connection_error_is_mapped_and_closes() -> None:

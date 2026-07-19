@@ -118,7 +118,7 @@ class _Connection:
         except MyPVAuthenticationError:
             await session.close()
             raise
-        except (ClientError, TimeoutError, OSError):
+        except ClientError, TimeoutError, OSError:
             await session.close()
             return False
         self._session = session
@@ -152,9 +152,16 @@ class _Connection:
         """Open if needed and perform a serialised GET, returning the body.
 
         A ``401`` surfaces as an auth error (the session/cookie is no longer
-        valid). Any other non-200 (e.g. ``429`` rate limit) returns the last
-        cached body for that read path instead of feeding a non-JSON body to the
-        parser; with no cached value yet it is a transient connection error.
+        valid). A response counts as usable when it is either a ``200`` **or**
+        carries a non-empty body: the myPV firmware answers some endpoints with
+        a sloppy status but a perfectly good payload (a parameter-less
+        ``control.html`` read), and treating that as a failure silently strips
+        the control entities. On any other non-200 the last cached body for the
+        read path is preferred (a transient ``429`` rate limit keeps the previous
+        values); only an unusable response is a connection error.
+
+        Only ``200`` bodies are cached, so an error page can never poison the
+        cache and be served as if it were device state.
         """
         if not self.is_open() and not await self.open():
             raise MyPVConnectionError
@@ -166,11 +173,13 @@ class _Connection:
             async with self._session.get(url, ssl=ssl) as response:
                 if response.status == 401:
                     raise MyPVAuthenticationError
+                text = await response.text()
                 if response.status != 200:
                     if cacheable and path in self._cache:
                         return self._cache[path]
+                    if text.strip():
+                        return text
                     raise MyPVConnectionError
-                text = await response.text()
         except (ClientError, TimeoutError) as exc:
             await self.close()
             raise MyPVConnectionError from exc
