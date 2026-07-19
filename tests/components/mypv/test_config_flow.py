@@ -322,9 +322,7 @@ async def test_dhcp_already_configured(
     assert result["reason"] == "already_configured"
 
 
-async def test_dhcp_cannot_connect(
-    hass: HomeAssistant, mock_device: FakeWorld
-) -> None:
+async def test_dhcp_cannot_connect(hass: HomeAssistant, mock_device: FakeWorld) -> None:
     """A DHCP discovery for an unreachable device aborts."""
     mock_device.spec().reachable = False
 

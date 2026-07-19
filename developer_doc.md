@@ -4,6 +4,19 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.6.6
+
+### Changes
+Structural follow-up to v1.6.5, which only removed the *trigger*. `control_enabled` conflated two unrelated questions — "can the device do this?" (capability) and "is the read working right now?" (runtime health) — and answered both with one latch that could only ever go from `True` to `False`. Both halves are now separated.
+
+- **Entity existence no longer depends on the control read.** The `control_enabled` gate is gone from `init_entities()` (boost buttons and the power `number` entities). It was always redundant for capability: those entities are already gated on `key in data_keys`, and `boostactive` is a `data.jsn` key, so a device without boost support simply does not offer it. The gate contributed nothing except the failure mode reported against 1.6.4 — a read failing at setup silently stripping working entities.
+- **The control read backs off instead of giving up.** `control_enabled` is replaced by `control_failures` / `control_skip`. The first `_CONTROL_FAILURES_BEFORE_BACKOFF` (3) consecutive failures are retried at the full poll rate and logged as warnings; after that the read is retried only every `_CONTROL_RETRY_CYCLES` (30) polls — ~5 min at the 10 s `SCAN_INTERVAL` — and logged at debug, so a device that genuinely does not serve the endpoint is not hammered. A single success resets the counter.
+- **This fixes a second, older bug unrelated to 1.6.4.** `control_enabled` never returned to `True`, and `MpyDevice.update()` gated the whole state read on it. One transient timeout — near-certain over days against a device that serves a single connection at a time, polled every 10 s — permanently froze the control state on its last value until the entry was reloaded. That has been latent since long before the 1.6.4 regression.
+
+### Tests
+- `test_boost_buttons_exist_when_the_control_read_fails` is an end-to-end regression guard: it sets up an entry whose `control.html` always raises and asserts the boost buttons are in the entity registry. Verified to *fail* with the old gate reinstated, so it is not a vacuous test. Required a new per-path `DeviceSpec.text_errors` in the fake world (the existing `error` field fails every read, which would have failed setup outright rather than modelling this case).
+- `test_state_update_failure_backs_off_then_recovers` replaces `test_state_update_failure_disables_control`, covering the counter, the backoff and the recovery.
+
 ## v1.6.5
 
 ### Bug fixes
@@ -13,7 +26,7 @@ rationale and implementation detail for each release.
 
 ### Open
 - The exact HTTP status the reporter's AC-THOR returns is still unknown (no log yet); `400`/`404` on the parameter-less read are the working hypotheses. Redirects are ruled out (aiohttp follows them), as is a malformed status line (that raises `ClientError`, which already failed identically in 1.6.3). If 1.6.5 does not fix it, the next datum needed is the raw `curl -sk -D - http://<IP>/control.html` output.
-- The deeper design issue is untouched by choice: entity *existence* is still decided by a single read at setup time, so any future transport hiccup can strip the control entities again. Decoupling capability from runtime health (or retrying before latching `control_enabled`) remains the structural fix.
+- The deeper design issue is untouched by choice: entity *existence* is still decided by a single read at setup time, so any future transport hiccup can strip the control entities again. Decoupling capability from runtime health (or retrying before latching `control_enabled`) remains the structural fix. **Done in v1.6.6.** Deliberately held back from 1.6.5 so that release stayed a single-variable experiment: with the decoupling shipped too, the buttons would reappear for the reporter either way and we would never learn what the device actually answers on `control.html`.
 
 ## v1.6.4
 

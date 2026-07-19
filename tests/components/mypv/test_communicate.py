@@ -5,11 +5,16 @@ import asyncio
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.mypv.communicate import MypvCommunicator
+from custom_components.mypv.communicate import (
+    _CONTROL_FAILURES_BEFORE_BACKOFF,
+    _CONTROL_RETRY_CYCLES,
+    MypvCommunicator,
+)
 from custom_components.mypv.connection import MyPVAuthenticationError
 from custom_components.mypv.const import COMM_HUB, DOMAIN
 from custom_components.mypv.mypv_device import MpyDevice
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 
 from .conftest import FakeWorld
 
@@ -89,22 +94,65 @@ async def test_update_fetches_endpoints_sequentially(
     assert max_active == 1
 
 
-async def test_state_update_failure_disables_control(
+async def test_state_update_failure_backs_off_then_recovers(
     hass: HomeAssistant,
     setup_integration: MockConfigEntry,
     mock_device: FakeWorld,
 ) -> None:
-    """A failing control read disables control mode and returns False."""
+    """A failing control read backs off but is never disabled for good."""
     comm, device = _comm_device(hass, setup_integration)
-    assert device.control_enabled is True
+    assert device.control_failures == 0
 
     mock_device.spec().error = TimeoutError()
 
-    assert await comm.state_update(device) is False
-    assert device.control_enabled is False
+    # The first failures are retried at the full poll rate...
+    for expected in range(1, _CONTROL_FAILURES_BEFORE_BACKOFF + 1):
+        assert await comm.state_update(device) is False
+        assert device.control_failures == expected
+    assert device.control_skip == 0
 
-    # Once control is disabled, state_update short-circuits to False.
+    # ...then the read backs off and the following polls are skipped.
     assert await comm.state_update(device) is False
+    assert device.control_skip == _CONTROL_RETRY_CYCLES
+    assert await comm.state_update(device) is False
+    assert device.control_skip == _CONTROL_RETRY_CYCLES - 1
+
+    # A recovered device is picked up again once the backoff has elapsed.
+    mock_device.spec().error = None
+    device.control_skip = 0
+    assert await comm.state_update(device) is True
+    assert device.control_failures == 0
+
+
+async def test_boost_buttons_exist_when_the_control_read_fails(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_device: FakeWorld,
+) -> None:
+    """A device that will not serve control.html still gets its boost buttons.
+
+    Regression guard for 1.6.4: a failing ``control.html`` read at setup used to
+    latch control off *before* the entities were built, which silently stripped
+    the boost buttons and power controls while everything fed from setup.jsn
+    (the "Enable Boost Mode" switch) stayed. Entity existence is the device's
+    own capability — the ``data.jsn`` keys — not the health of one read.
+    """
+    mock_device.spec().text_errors["/control.html"] = TimeoutError()
+
+    mock_config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    entities = er.async_get(hass).entities
+    assert any(entity.domain == "button" for entity in entities.values())
+    assert [
+        entity.entity_id
+        for entity in entities.values()
+        if entity.entity_id.startswith("button.")
+    ] == [
+        "button.ac_elwa_2_123456_start_boost",
+        "button.ac_elwa_2_123456_stop_boost",
+    ]
 
 
 async def test_command_auth_error_starts_reauth(

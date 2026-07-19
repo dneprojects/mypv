@@ -40,6 +40,10 @@ SCAN_INTERVAL = timedelta(seconds=10)
 # Errors that mean "device temporarily unreachable" (as opposed to an auth
 # failure, which must trigger re-authentication instead of a retry).
 _COMM_ERRORS = (TimeoutError, aiohttp.ClientError, MyPVConnectionError)
+# Consecutive ``control.html`` failures tolerated at the full poll rate before
+# the read backs off to every _CONTROL_RETRY_CYCLES polls (~5 min at 10 s).
+_CONTROL_FAILURES_BEFORE_BACKOFF = 3
+_CONTROL_RETRY_CYCLES = 30
 
 
 class MypvCommunicator(DataUpdateCoordinator[None]):
@@ -90,8 +94,10 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
             ip_str, self.password, self.use_https, device_cls
         )
 
-        if connection is None and not self.password and await self._speaks_https(
-            ip_str
+        if (
+            connection is None
+            and not self.password
+            and await self._speaks_https(ip_str)
         ):
             raise ConfigEntryAuthFailed(
                 f"myPV device at {ip_str} now requires a password"
@@ -148,7 +154,7 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
         probe = create_connection(ip_str, None, use_https=True)
         try:
             return await probe.open()
-        except (MyPVAuthenticationError, MyPVConnectionError):
+        except MyPVAuthenticationError, MyPVConnectionError:
             return False
         finally:
             await probe.close()
@@ -199,16 +205,32 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
         return setup
 
     async def state_update(self, device: MpyDevice) -> bool:
-        """Update control state."""
-        if not device.control_enabled:
+        """Update control state, backing off on failure but never giving up.
+
+        A failing ``control.html`` read used to disable control for the entry's
+        whole lifetime, which froze the control state on its last value until a
+        reload -- with a 10 s poll against a device that serves one connection
+        at a time, a single transient timeout was enough. After a few
+        consecutive failures the read is therefore retried only every
+        ``_CONTROL_RETRY_CYCLES`` polls (so a device that does not serve the
+        endpoint is not hammered), and it recovers on its own as soon as the
+        device answers again.
+        """
+        if device.control_skip > 0:
+            device.control_skip -= 1
             return False
         try:
             response_text = await self._connection(device).get_text("/control.html")
             self.get_state_dict(response_text, device)
         except _COMM_ERRORS as err_msg:
-            self.logger.warning("Error during control update: %s", err_msg)
-            device.control_enabled = False
+            device.control_failures += 1
+            if device.control_failures <= _CONTROL_FAILURES_BEFORE_BACKOFF:
+                self.logger.warning("Error during control update: %s", err_msg)
+            else:
+                self.logger.debug("Control update still failing: %s", err_msg)
+                device.control_skip = _CONTROL_RETRY_CYCLES
             return False
+        device.control_failures = 0
         return True
 
     def _start_reauth(self, err: MyPVAuthenticationError) -> None:

@@ -3,6 +3,10 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.6.6
+- The boost buttons and power controls are now always created when the device supports them — they can no longer disappear because the status read happened to fail while the integration was starting.
+- A failing status read no longer switches the control state off permanently: it is retried (at a reduced rate) and recovers by itself as soon as the device answers again. Previously a single timeout froze the control state sensor until Home Assistant was restarted.
+
 ## v1.6.5
 - Fixed the boost buttons ("Start Boost" / "Stop Boost") and the power controls disappearing after the update to 1.6.4: a device answering the status read with an unusual HTTP status is accepted again as long as it sends a usable body.
 

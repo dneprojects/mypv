@@ -83,7 +83,7 @@ class MpvConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Open a probe connection, treating any failure as unreachable."""
         try:
             return await connection.open()
-        except (MyPVAuthenticationError, MyPVConnectionError):
+        except MyPVAuthenticationError, MyPVConnectionError:
             return False
 
     @staticmethod

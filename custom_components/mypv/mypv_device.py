@@ -80,7 +80,12 @@ class MpyDevice:
         self.pid_power: float = 0
         self.pid_power_set = 0
         self.logger = _LOGGER
-        self.control_enabled = True
+        # ``control.html`` health. Consecutive failures back the read off (see
+        # ``MypvCommunicator.state_update``) but never disable it for good, and
+        # they never decide which entities exist -- that is the device's own
+        # capability, read from the ``data.jsn`` keys.
+        self.control_failures = 0
+        self.control_skip = 0
 
     async def initialize(self) -> None:
         """Get setup information, find sensors."""
@@ -166,15 +171,14 @@ class MpyDevice:
                         )
                     else:
                         self.binary_sensors.append(MpvBinSensor(self, key, desc))
-                elif desc.kind == "button" and self.control_enabled:
+                elif desc.kind == "button":
                     self.buttons.append(MpvBoostButton(self, key, desc))
                     self.buttons.append(
                         MpvBoostOffButton(self, key + "off", SENSOR_TYPES[key + "off"])
                     )
                 elif desc.kind == "control":
-                    if self.control_enabled:
-                        self.controls.append(MpvPowerControl(self, key, desc))
-                        self.controls.append(MpvPidPowerControl(self, key, desc))
+                    self.controls.append(MpvPowerControl(self, key, desc))
+                    self.controls.append(MpvPidPowerControl(self, key, desc))
                     # Setup as sensor, too
                     self.sensors.append(MpvSensor(self, key, desc))  # power
                     for prefix, energy_cls in (
@@ -239,7 +243,7 @@ class MpyDevice:
         # every entity to "unknown" on each failing cycle.
         self.data = await self.comm.data_update(self)
         self.setup = await self.comm.setup_update(self)
-        if self.control_enabled and await self.comm.state_update(self):
+        if await self.comm.state_update(self):
             if "State" in self.state_dict:
                 self.state = int(self.state_dict["State"])
             else:

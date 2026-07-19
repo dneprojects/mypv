@@ -55,6 +55,10 @@ class DeviceSpec:
     # When set, every get_json/get_text raises this (the device answers
     # identification but not data — models a mid-session drop-out).
     error: Exception | None = None
+    # Per-path text errors: models a device that serves data.jsn/setup.jsn fine
+    # but not a given text endpoint (a control.html status read that the
+    # firmware answers unusably).
+    text_errors: dict[str, Exception] = field(default_factory=dict)
 
 
 class FakeConnection:
@@ -168,6 +172,8 @@ class FakeConnection:
     async def get_text(self, path: str, query: dict[str, Any] | None = None) -> str:
         """Record the request and return the canned text body for ``path``."""
         self._record(path, query)
+        if (text_error := self._spec.text_errors.get(path)) is not None:
+            raise text_error
         return self._spec.text.get(path, CONTROL_HTML)
 
     async def send(self, path: str, params: dict[str, Any]) -> str:
