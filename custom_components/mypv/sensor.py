@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.integration.sensor import IntegrationSensor, UnitOfTime
 from homeassistant.components.sensor import (
+    DOMAIN as SENSOR_DOMAIN,
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
@@ -22,7 +23,7 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import slugify
 
@@ -326,23 +327,21 @@ class MpvEnergySensor(IntegrationSensor, MpvSensor):
         """Initialize the sensor."""
         self._last_value: float = 0
         self._last_reset: datetime | None = None
-        self.name_by_user: str | None = None
-        # Get name_by_user from device registry if available
-        devreg = dr.async_get(device.comm.hass)
-        for dev_id in devreg.devices.data:
-            dev = devreg.devices.get(dev_id)
-            if dev is not None and (DOMAIN, device.serial_number) in dev.identifiers:
-                self.name_by_user = dev.name_by_user
-                break
-        if not self.name_by_user:
-            self.name_by_user = device.name
         self.ha_timezone = tz
+        # The power sensor this integrates. Its entity id is *not* predictable
+        # from the English description name: the display name is translated
+        # (``Power ELWA-2`` -> ``Leistung ELWA-2``) and the entity id derives
+        # from that, and the user may rename it afterwards. Only the unique id
+        # is stable, so the real entity id is looked up in the entity registry
+        # once the platform has been set up (see ``async_added_to_hass``).
+        self._source_unique_id = f"{device.serial_number}_{source.name}"
 
         # Explicitly initialize both superclasses
         IntegrationSensor.__init__(
             self,
             device.comm.hass,
-            source_entity=f"sensor.{slugify(self.name_by_user + '_' + source.name)}",
+            # Placeholder only; rebound to the registered entity id on add.
+            source_entity=f"sensor.{slugify(device.name + '_' + source.name)}",
             name=info.name,
             round_digits=1,
             integration_method="trapezoidal",
@@ -357,6 +356,29 @@ class MpvEnergySensor(IntegrationSensor, MpvSensor):
         # translation_key, so remove it entirely to get the translated name
         # like every other entity.
         del self._attr_name
+
+    async def async_added_to_hass(self) -> None:
+        """Bind the integration to the power sensor's real entity id.
+
+        The id built at construction assumes the untranslated display name, so
+        on a non-English installation (or after the user renamed the sensor) it
+        points at an entity that does not exist: the integration then never
+        receives a power reading, the energy sensors stay at 0 and carry no
+        unit. The unique id is language- and rename-proof, so resolve through
+        the registry -- by now the power sensor is registered, it is added
+        ahead of the energy sensors on the same platform.
+        """
+        if source_entity_id := er.async_get(self.hass).async_get_entity_id(
+            SENSOR_DOMAIN, DOMAIN, self._source_unique_id
+        ):
+            self._sensor_source_id = source_entity_id
+            self._source_entity = source_entity_id
+        else:
+            _LOGGER.warning(
+                "No power sensor found for %s; energy integration stays at 0",
+                self._source_unique_id,
+            )
+        await super().async_added_to_hass()
 
     @property
     def native_value(self) -> Decimal:

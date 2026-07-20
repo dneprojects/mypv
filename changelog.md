@@ -3,6 +3,9 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.6.7
+- Fixed the daily and monthly energy consumption sensors staying at 0 kWh with no unit on non-English installations: they now follow the power sensor by its internal id instead of its display name, so a translated or renamed power sensor is still found.
+
 ## v1.6.6
 - The boost buttons and power controls are now always created when the device supports them — they can no longer disappear because the status read happened to fail while the integration was starting.
 - A failing status read no longer switches the control state off permanently: it is retried (at a reduced rate) and recovers by itself as soon as the device answers again. Previously a single timeout froze the control state sensor until Home Assistant was restarted.

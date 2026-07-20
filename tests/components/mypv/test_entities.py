@@ -124,3 +124,48 @@ async def test_diagnostic_sensors_disabled_by_default(
     assert entry.disabled_by is er.RegistryEntryDisabler.INTEGRATION
     # Disabled entities have no state.
     assert hass.states.get(entity_id) is None
+
+
+async def test_energy_sensors_bind_to_the_translated_power_sensor(
+    hass: HomeAssistant,
+    mock_device: FakeWorld,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    """Energy sensors integrate the real power entity, whatever it is named.
+
+    The power sensor's entity id follows its *translated* display name
+    (``Power ELWA-2`` -> ``Leistung ELWA-2``), so a source id built from the
+    English description name points at an entity that does not exist: the
+    integration never receives a reading and the energy sensors stay at 0
+    without a unit. Only the unique id is language-proof.
+    """
+    hass.config.language = "de"
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=f"mypv_{MOCK_IP}",
+        data={DEV_IP: MOCK_IP, CONF_HOSTS: [MOCK_IP]},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    power_entity_id = entity_registry.async_get_entity_id(
+        "sensor", DOMAIN, f"{MOCK_SERIAL}_Power ELWA-2"
+    )
+    assert power_entity_id is not None
+    # The German name drives the entity id -- this is what the old, string-built
+    # source id got wrong.
+    assert "leistung" in power_entity_id
+
+    for name in (
+        "Energy consumption",
+        "Energy consumption daily",
+        "Energy consumption monthly",
+    ):
+        energy_entity_id = entity_registry.async_get_entity_id(
+            "sensor", DOMAIN, f"{MOCK_SERIAL}_{name}"
+        )
+        assert energy_entity_id is not None
+        state = hass.states.get(energy_entity_id)
+        assert state is not None
+        assert state.attributes["source"] == power_entity_id

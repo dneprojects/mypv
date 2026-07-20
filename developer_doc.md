@@ -4,6 +4,19 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.6.7
+
+### Bug fixes
+- **Energy sensors integrated a source entity that does not exist on a translated installation.** `MpvEnergySensor.__init__` built the `IntegrationSensor` source id as `f"sensor.{slugify(name_by_user + '_' + source.name)}"` — i.e. from the *English* description name (`Power ELWA-2`). The display name is resolved through `translation_key`, so on a German installation the power sensor is registered as `sensor.<device>_leistung_elwa_2` while the energy sensors kept integrating `sensor.<device>_power_elwa_2`. Nothing ever reported under that id, so `int_`/`intd_`/`intm_` sensors stayed at `0` and — because `IntegrationSensor` derives its unit from the source — carried no `unit_of_measurement` either. Reported for an AC ELWA 2 on a German install; every non-English user is affected, and so is anyone who renamed their power sensor (the same string-built id breaks on rename).
+- **Fix: resolve the source through the entity registry by unique id.** The unique id (`f"{serial}_{source.name}"`) is derived from the raw English name and is both language- and rename-proof. `async_added_to_hass` looks the real entity id up and rebinds `_sensor_source_id` (state tracking) *and* `_source_entity` (initial value + restore) before delegating to `IntegrationSensor`; by then the power sensor is registered, as it is added ahead of the energy sensors on the same platform. The construction-time string id remains only as a placeholder, and a failed lookup now logs a warning instead of integrating silently into nothing. The `name_by_user` device-registry walk this needed is gone.
+- Note this was collateral damage of the v1.4.2 translation fix (`del self._attr_name`, so the translated name is used): that is what made the entity id language-dependent, invalidating the assumption the source id was built on.
+
+### Tests
+- `test_energy_sensors_bind_to_the_translated_power_sensor` sets `hass.config.language = "de"`, resolves the power entity from the registry, asserts its id really is the German one, and then asserts the public `source` attribute of all three energy sensors points at it. Verified to *fail* against the old string-built id, so it is a genuine regression guard — in English the old code would have passed.
+
+### Open
+- **`button.stop_boost` does not stop a running boost** (reported alongside the above; present in 1.6.3 too, so not a regression). `activate_boost(device, 0)` writes `POST /setup.jsn {"bststrt": 0}`, and the device evidently ignores it: `bststrt` looks like a one-shot trigger rather than a flag, and `setup.jsn` carries no boost-stop key (only `bstmode` and `ww1boost`). The reporter stops a boost by switching `bstmode` off. Needs a `setup.jsn` dump taken while a boost runs and again after stopping it from the device's own web interface, to see which key actually changes — guessing a write to live heating hardware is not acceptable.
+
 ## v1.6.6
 
 ### Changes
