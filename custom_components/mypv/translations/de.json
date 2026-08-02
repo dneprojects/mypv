@@ -389,5 +389,22 @@
         "name": "Firmware Leistungseinheit Acthor 9"
       }
     }
+  },
+  "exceptions": {
+    "firmware_command_failed": {
+      "message": "Das Gerät hat den Befehl {command} nicht angenommen."
+    },
+    "firmware_download_timeout": {
+      "message": "Das Gerät hat den Firmware-Download nicht innerhalb von {minutes} Minuten abgeschlossen."
+    },
+    "firmware_install_timeout": {
+      "message": "Das Gerät hat die Firmware-Installation nicht innerhalb von {minutes} Minuten abgeschlossen. Möglicherweise startet es noch neu; bitte anschließend die Firmware-Version prüfen."
+    },
+    "firmware_install_unsupported": {
+      "message": "Dieses Gerät kann die Firmware nicht aus Home Assistant heraus installieren. Die Firmware der Steuereinheit ist älter als {version}; bitte über die Weboberfläche des Geräts aktualisieren."
+    },
+    "firmware_not_downloaded": {
+      "message": "Auf dem Gerät liegt keine Firmware zur Installation bereit."
+    }
   }
 }

@@ -328,6 +328,23 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
             return False
         return True
 
+    async def firmware_command(self, device: MpyDevice, command: str) -> bool:
+        """Trigger a firmware download or installation.
+
+        The device takes ``firmware_download`` and ``firmware_update`` as
+        ordinary setup writes; both only exist from control unit firmware
+        a0020000 onwards (see ``update.py``).
+        """
+        try:
+            await self._connection(device).send("/setup.jsn", {command: 1})
+        except MyPVAuthenticationError as err:
+            self._start_reauth(err)
+            return False
+        except _COMM_ERRORS as err_msg:
+            self.logger.warning("Error during %s command: %s", command, err_msg)
+            return False
+        return True
+
     def get_state_dict(self, text: str, device: MpyDevice) -> None:
         """Convert lines to state dict."""
         text = text.replace("\r\n", "<br>").replace("\n", "<br>")

@@ -4,6 +4,21 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.7.0b1
+
+### New feature
+- **Firmware installation from Home Assistant.** `MpvFwUpdate` gained `UpdateEntityFeature.INSTALL`, driving the sequence the my-PV reference library implements in `MyPVDevice.update_firmware()` (added there in [py-mypv 0.0.6](https://github.com/my-PV/py-mypv/pull/11), 2026-07-20): at `upd_state == 1` send `firmware_download`, wait for `upd_state == 10`, send `firmware_update`, wait for `upd_state == 0`. Both commands are ordinary `setup.jsn` writes (`{"firmware_download": 1}` / `{"firmware_update": 1}`), added as `MypvCommunicator.firmware_command()` alongside `activate_boost()`. Each step has a 5 minute timeout and polls every 5 s through `coordinator.async_refresh()`, whose failures are swallowed — the device reboots while installing, so failing polls are expected. Errors are translated (`exceptions` block in `strings.json`, new for this integration).
+- **This corrects the assumption the entity was built on.** The old comment claimed "the device downloads and installs new firmware on its own"; `upd_state == 10` is literally "Download finished, waiting for installation", so without the command the device sits there.
+- **Version gate.** The library's device configs declare `"firmware": ">=a0020000"` on both commands — and never evaluate it (`supports_command()` only checks the `advanced` flag, so upstream offers the commands on any device). We do evaluate it: `supports_remote_install()` requires the `a` series and seven digits `>= 0020000`, so a Solthor (`s…`) and any pre-a0020000 device keeps the old report-only behaviour. Only the control unit is installable — whether `firmware_download` also drives the power unit parts (`ps_upd_state`, `p9s_upd_state`) is unverified, so those stay report-only.
+- The other firmware gate in the library's configs, for reference: `setup.mainmode` on the AC ELWA 2 needs `>=e0001000`.
+
+### Bug fixes
+- **`in_progress` was computed but never shown.** `UpdateEntity.state_attributes` is `@final` and only reads the `in_progress` property when `UpdateEntityFeature.PROGRESS` is set; otherwise it uses its own private flag, which moves only while HA itself installs. The entity had no features at all, so a download running on the device stayed invisible. `PROGRESS` is now a class-level default on every part, `INSTALL` is added on top where supported. `update_percentage` reports `upd_percentage` during the download states (2/3/4) — HA blanks it outside `in_progress` anyway.
+
+### Notes
+- Our `upd_state` enum is more complete than the library's: we know `0,1,2,3,4,5,10` plus the Solthor offset, upstream only `0,1,3,10`. Its download wait keys on `10` with the `upd_percentage == 100` check commented out, so an interrupted download (5) runs into its timeout.
+- Released as a **beta**: the install path writes to live heating hardware and has only been exercised against fakes.
+
 ## v1.6.9
 
 ### Bug fixes

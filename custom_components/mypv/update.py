@@ -1,11 +1,13 @@
 """Update entities of myPV integration."""
 
+import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.update import UpdateEntity
+from homeassistant.components.update import UpdateEntity, UpdateEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import COMM_HUB, DOMAIN
@@ -17,8 +19,8 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 # Firmware parts that report an installed/latest version pair plus an
-# update-state key. The device downloads and installs new firmware on its
-# own, so these entities are report-only (no INSTALL feature).
+# update-state key. Only the control unit can be updated from Home Assistant;
+# the power unit parts stay report-only.
 #   name, installed key, latest key, update-state key
 FW_PARTS: tuple[tuple[str, str, str, str], ...] = (
     ("Control Unit Firmware", "fwversion", "fwversionlatest", "upd_state"),
@@ -35,6 +37,37 @@ FW_PARTS: tuple[tuple[str, str, str, str], ...] = (
 # installing firmware. The enum is offset by one on Solthor devices.
 _IN_PROGRESS_STATES = (2, 3, 4, 10)
 _IN_PROGRESS_STATES_SOLTHOR = (3, 4, 5, 7)
+
+# Update states that carry a download percentage.
+_DOWNLOADING_STATES = (2, 3, 4)
+
+# Control unit update states relevant to an installation.
+_STATE_IDLE = 0
+_STATE_AVAILABLE = 1
+_STATE_DOWNLOADED = 10
+
+# The device only accepts ``firmware_download`` / ``firmware_update`` from this
+# control unit firmware onwards; before it, new firmware has to be installed
+# from the device's own web interface. Control unit versions are a letter
+# followed by seven digits ("a0021700"), and only the "a" series knows the
+# commands -- a Solthor ("s...") stays report-only.
+_INSTALL_MIN_FW = "a0020000"
+
+# How long to wait for the download and for the installation, and how often to
+# poll the device while waiting. The device serves one connection at a time, so
+# this stays well above the request duration.
+_STEP_TIMEOUT = 300
+_POLL_INTERVAL = 5
+
+
+def supports_remote_install(version: str | None) -> bool:
+    """Return whether this control unit firmware knows the update commands."""
+    if not version or len(version) != len(_INSTALL_MIN_FW):
+        return False
+    series, digits = version[0], version[1:]
+    if series != _INSTALL_MIN_FW[0] or not digits.isdigit():
+        return False
+    return int(digits) >= int(_INSTALL_MIN_FW[1:])
 
 
 async def async_setup_entry(
@@ -55,7 +88,13 @@ async def async_setup_entry(
 
 
 class MpvFwUpdate(MpvEntity, UpdateEntity):
-    """Report-only firmware update entity for a myPV device part."""
+    """Firmware update entity for a myPV device part."""
+
+    # Every part reports device-driven progress. Without the flag, HA ignores
+    # the ``in_progress`` property entirely and uses its own internal state,
+    # which only ever moves while HA itself installs something -- so a download
+    # started at the device stayed invisible.
+    _attr_supported_features = UpdateEntityFeature.PROGRESS
 
     def __init__(
         self,
@@ -71,6 +110,13 @@ class MpvFwUpdate(MpvEntity, UpdateEntity):
         self._installed_key = installed_key
         self._latest_key = latest_key
         self._state_key = state_key
+        self._installing = False
+        # Only the control unit takes the commands, and only from a0020000 on.
+        self._can_install = installed_key == "fwversion" and supports_remote_install(
+            device.data.get(installed_key)
+        )
+        if self._can_install:
+            self._attr_supported_features |= UpdateEntityFeature.INSTALL
 
     @property
     def installed_version(self) -> str | None:
@@ -89,15 +135,90 @@ class MpvFwUpdate(MpvEntity, UpdateEntity):
     @property
     def in_progress(self) -> bool:
         """Return whether the device is downloading or installing firmware."""
+        if self._installing:
+            return True
         states = (
             _IN_PROGRESS_STATES_SOLTHOR
             if self.device.model == "Solthor"
             else _IN_PROGRESS_STATES
         )
+        return self._update_state() in states
+
+    @property
+    def update_percentage(self) -> int | None:
+        """Return the download progress, if the device is downloading."""
+        if self._update_state() not in _DOWNLOADING_STATES:
+            return None
+        percentage = self.device.data.get("upd_percentage")
+        if not isinstance(percentage, (int, float)):
+            return None
+        return int(percentage)
+
+    def _update_state(self) -> int | None:
+        """Return the update state as an int, or None if it is unusable."""
         try:
-            return int(self.device.data[self._state_key]) in states
+            return int(self.device.data[self._state_key])
         except KeyError, TypeError, ValueError:
-            return False
+            return None
+
+    async def async_install(
+        self, version: str | None, backup: bool, **kwargs: Any
+    ) -> None:
+        """Download the new firmware if needed, then install it."""
+        if not self._can_install:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="firmware_install_unsupported",
+                translation_placeholders={"version": _INSTALL_MIN_FW},
+            )
+
+        self._installing = True
+        self.async_write_ha_state()
+        try:
+            if self._update_state() == _STATE_AVAILABLE:
+                await self._send("firmware_download")
+                await self._wait_for(_STATE_DOWNLOADED, "firmware_download_timeout")
+
+            if self._update_state() != _STATE_DOWNLOADED:
+                # Nothing waiting to be installed -- either the update vanished
+                # or the device never picked the download up.
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN,
+                    translation_key="firmware_not_downloaded",
+                )
+
+            await self._send("firmware_update")
+            # The device reboots while installing, so failing polls are normal.
+            await self._wait_for(_STATE_IDLE, "firmware_install_timeout")
+        finally:
+            self._installing = False
+            self.async_write_ha_state()
+
+    async def _send(self, command: str) -> None:
+        """Send a firmware command, raising if the device did not take it."""
+        if not await self.comm.firmware_command(self.device, command):
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="firmware_command_failed",
+                translation_placeholders={"command": command},
+            )
+
+    async def _wait_for(self, state: int, timeout_key: str) -> None:
+        """Poll the device until it reports ``state``."""
+        try:
+            async with asyncio.timeout(_STEP_TIMEOUT):
+                while self._update_state() != state:
+                    await asyncio.sleep(_POLL_INTERVAL)
+                    # A failing refresh is swallowed by the coordinator, which
+                    # is what we want while the device is rebooting.
+                    await self.coordinator.async_refresh()
+                    self.async_write_ha_state()
+        except TimeoutError as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key=timeout_key,
+                translation_placeholders={"minutes": str(_STEP_TIMEOUT // 60)},
+            ) from err
 
     @callback
     def _handle_coordinator_update(self) -> None:

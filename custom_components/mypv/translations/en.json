@@ -623,5 +623,22 @@
         "name": "Power Unit Firmware Acthor 9"
       }
     }
+  },
+  "exceptions": {
+    "firmware_command_failed": {
+      "message": "The device did not accept the {command} command."
+    },
+    "firmware_download_timeout": {
+      "message": "The device did not finish downloading the firmware within {minutes} minutes."
+    },
+    "firmware_install_timeout": {
+      "message": "The device did not finish installing the firmware within {minutes} minutes. It may still be rebooting; check the firmware version afterwards."
+    },
+    "firmware_install_unsupported": {
+      "message": "This device cannot install firmware from Home Assistant. Its control unit firmware is older than {version}; update it from the device's own web interface."
+    },
+    "firmware_not_downloaded": {
+      "message": "The device has no firmware ready to install."
+    }
   }
 }

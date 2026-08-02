@@ -3,6 +3,10 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.7.0b1 (beta)
+- The control unit firmware can now be installed from Home Assistant: the update entity downloads the firmware and starts the installation, with the download progress shown while it runs. Needs control unit firmware a0020000 or newer — older devices keep reporting the update but still have to be updated from the device's own web interface, as do the power unit firmwares.
+- A firmware download started at the device itself is now visible in Home Assistant; the progress was previously computed but never shown.
+
 ## v1.6.9
 - Fixed "Entity no longer has a state class" for the AC-THOR 9s output status sensor: devices that report their relay state as text lost the long-term statistics for it.
 - Fixed the Surplus sensor losing its statistics depending on whether the device happened to report a value while Home Assistant was starting.
