@@ -4,6 +4,18 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.7.0
+
+Promotion of v1.7.0b2, code unchanged. The two beta sections below stay as the
+record of how the version gate got fixed.
+
+### Verified on hardware
+- The version gate: the reporter's AC ELWA 2 (`e0002500`) is offered the install, and Home Assistant moved the entity from Diagnostic to Config, which is `UpdateEntity.entity_category` reacting to `UpdateEntityFeature.INSTALL` — so core does see the feature.
+
+### Not verified on hardware
+- **The install sequence itself.** The device reports `fwversion == fwversionlatest` and `upd_state == 0`, so there was no pending update to run it against; it has only been exercised against the fakes. The failure mode is bounded: `firmware_download` merely downloads, `upd_state == 10` is a stable state from which the installation can still be started from the device's own web interface, and a device that ignores the keys runs into the 5 minute timeout and reports a translated error.
+- Whether the device would even find an update is open: nothing in the integration triggers the library's `check_fwupd` command, and `homeassistant.update_entity` only reaches `CoordinatorEntity.async_update()`, i.e. a plain `data.jsn` re-read. When the device checks with my-PV is entirely up to the device.
+
 ## v1.7.0b2
 
 ### Bug fixes
