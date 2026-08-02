@@ -1,9 +1,13 @@
 """Unit tests for myPV sensor value handling not reachable via setup."""
 
 from datetime import UTC, datetime
+import inspect
 from typing import Any
 from unittest.mock import MagicMock
 
+import pytest
+
+from custom_components.mypv import sensor as sensor_module
 from custom_components.mypv.const import MpvDescription
 from custom_components.mypv.sensor import (
     UPDATE_STATE_ENUM,
@@ -14,6 +18,7 @@ from custom_components.mypv.sensor import (
     MpvSensor,
     MpvUpdateSensor,
 )
+from homeassistant.components.integration.sensor import IntegrationSensor
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.const import UnitOfFrequency, UnitOfPower
 from homeassistant.util import slugify
@@ -183,3 +188,67 @@ async def test_energy_monthly_reset_and_error() -> None:
     sensor._state = "bad"
     await sensor.async_update()
     assert sensor._last_value == 0.0
+
+
+def _core_2026_8_init(
+    self: Any,
+    *,
+    integration_method: str,
+    name: str | None,
+    round_digits: int | None,
+    source_entity: str,
+    unique_id: str | None,
+    unit_prefix: str | None,
+    unit_time: Any,
+    max_sub_interval: Any,
+    device: Any = None,
+) -> None:
+    """The IntegrationSensor signature as of HA Core 2026.8."""
+
+
+def _core_2026_7_init(
+    self: Any,
+    hass: Any,
+    *,
+    integration_method: str,
+    name: str | None,
+    round_digits: int | None,
+    source_entity: str,
+    unique_id: str | None,
+    unit_prefix: str | None,
+    unit_time: Any,
+    max_sub_interval: Any,
+) -> None:
+    """The IntegrationSensor signature up to HA Core 2026.7."""
+
+
+@pytest.mark.parametrize(
+    ("core_init", "takes_hass"),
+    [(_core_2026_7_init, True), (_core_2026_8_init, False)],
+)
+def test_integration_sensor_args_match_core(
+    monkeypatch: pytest.MonkeyPatch, core_init: Any, takes_hass: bool
+) -> None:
+    """The energy sensor's arguments bind against both core signatures.
+
+    2026.8 dropped the positional ``hass`` argument, which broke setup with a
+    TypeError (issue #51), so the call shape follows the installed signature.
+    """
+    monkeypatch.setattr(sensor_module, "_INTEGRATION_SENSOR_TAKES_HASS", takes_hass)
+    args = sensor_module.integration_sensor_args(
+        MagicMock(), "sensor.power", "Energy consumption", "SN1_Energy consumption"
+    )
+    assert ("hass" in args) is takes_hass
+    inspect.signature(core_init).bind(MagicMock(), **args)
+
+
+def test_integration_sensor_args_bind_to_installed_core() -> None:
+    """The arguments also bind against the core actually installed here.
+
+    Guards the next signature change: the two cases above are frozen copies,
+    this one follows whatever ``IntegrationSensor`` currently expects.
+    """
+    args = sensor_module.integration_sensor_args(
+        MagicMock(), "sensor.power", "Energy consumption", "SN1_Energy consumption"
+    )
+    inspect.signature(IntegrationSensor.__init__).bind(MagicMock(), **args)

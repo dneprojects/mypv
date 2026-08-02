@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+import inspect
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -34,6 +35,38 @@ if TYPE_CHECKING:
     from .mypv_device import MpyDevice
 
 _LOGGER = logging.getLogger(__name__)
+
+# ``IntegrationSensor.__init__`` took ``hass`` as its only positional argument
+# until Home Assistant 2026.8, where it became keyword-only, with an optional
+# ``device`` in place of the device lookup it used ``hass`` for. Both core
+# versions are supported, so pick the call shape from the actual signature.
+_INTEGRATION_SENSOR_TAKES_HASS = (
+    "hass" in inspect.signature(IntegrationSensor.__init__).parameters
+)
+
+
+def integration_sensor_args(
+    hass: HomeAssistant, source_entity: str, name: str, unique_id: str
+) -> dict[str, Any]:
+    """Return the ``IntegrationSensor.__init__`` arguments for this core version.
+
+    ``device`` is deliberately left unset on 2026.8 and later: the entity is
+    bound to the myPV device through the device info from ``MpvEntity`` anyway.
+    """
+    args: dict[str, Any] = {
+        "source_entity": source_entity,
+        "name": name,
+        "round_digits": 1,
+        "integration_method": "trapezoidal",
+        "unit_prefix": "k",
+        "unit_time": UnitOfTime.HOURS,
+        "unique_id": unique_id,
+        "max_sub_interval": timedelta(seconds=10),
+    }
+    if _INTEGRATION_SENSOR_TAKES_HASS:
+        args["hass"] = hass
+    return args
+
 
 # Map a unit of measurement to the matching sensor device class.
 _DEVICE_CLASS_BY_UNIT: dict[str, SensorDeviceClass] = {
@@ -339,16 +372,13 @@ class MpvEnergySensor(IntegrationSensor, MpvSensor):
         # Explicitly initialize both superclasses
         IntegrationSensor.__init__(
             self,
-            device.comm.hass,
-            # Placeholder only; rebound to the registered entity id on add.
-            source_entity=f"sensor.{slugify(device.name + '_' + source.name)}",
-            name=info.name,
-            round_digits=1,
-            integration_method="trapezoidal",
-            unit_prefix="k",
-            unit_time=UnitOfTime.HOURS,
-            unique_id=f"{device.serial_number}_{info.name}",
-            max_sub_interval=timedelta(seconds=10),
+            **integration_sensor_args(
+                device.comm.hass,
+                # Placeholder only; rebound to the registered entity id on add.
+                source_entity=f"sensor.{slugify(device.name + '_' + source.name)}",
+                name=info.name,
+                unique_id=f"{device.serial_number}_{info.name}",
+            ),
         )
         MpvSensor.__init__(self, device, key, info)
         # IntegrationSensor.__init__ sets an explicit _attr_name. As long as

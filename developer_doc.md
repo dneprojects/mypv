@@ -4,6 +4,17 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.6.8
+
+### Bug fixes
+- **Setup failed on HA Core 2026.8 with `TypeError: IntegrationSensor.__init__() takes 1 positional argument but 2 positional arguments (and 8 keyword-only arguments) were given`** (issue #51, reported against 2026.8.0b2). `MpvEnergySensor.__init__` passed `device.comm.hass` positionally, which every core up to 2026.7 required. Core PR [#177596](https://github.com/home-assistant/core/pull/177596) ("Do not set a device on YAML integration entities", merged 2026-07-30, milestone 2026.8.0, commit `afad195652f`) removed the parameter: since #177459 `entity_platform` warns when an entity attaches a device without a config entry, and the constructor unconditionally did `self.device_entry = async_entity_id_to_device(hass, source_entity)` — also for YAML setups, where that link was never persisted anyway. The lookup therefore moved out to the caller as a new optional keyword `device: DeviceEntry | None = None`, leaving `hass` unused and dropped. Signature verified against the release tags: 2026.7.4 and 2026.8.0b0 still take `hass`, 2026.8.0b1 and later do not. The whole integration was dead on 2026.8 — `init_entities()` raises before any platform is set up.
+- **Fix: derive the call shape from the installed signature.** The issue reporter's patch (just delete the argument) is correct on 2026.8 but breaks every core from 2026.4 (our `hacs.json` minimum) through 2026.7, where `hass` is mandatory. `_INTEGRATION_SENSOR_TAKES_HASS` inspects `inspect.signature(IntegrationSensor.__init__).parameters` once at import, and the new `integration_sensor_args()` helper adds `hass` only when the installed core still declares it. Inspection rather than a version comparison, so betas and any backport are handled correctly too.
+- `device` is deliberately not passed on 2026.8+. On the old core the dropped lookup resolved the *source* entity's device, i.e. the same myPV device the energy sensor already gets from `MpvEntity`'s `_attr_device_info` (`MpvSensor.__init__` runs right after, and `EntityPlatform` sets `device_entry` from the device info when adding). Passing it would be redundant; the device assignment is unchanged in practice.
+
+### Tests
+- `test_integration_sensor_args_match_core` is parametrized over frozen copies of both real signatures (2026.7 and 2026.8) and binds the produced arguments against each with `inspect.Signature.bind` — the exact `TypeError` from the issue is what it catches. `test_integration_sensor_args_bind_to_installed_core` does the same against the `IntegrationSensor` actually installed, so the next signature change surfaces here rather than in a user's log.
+- This needed `integration_sensor_args()` to be a module-level helper: the arguments are otherwise built inline inside `__init__` and are not reachable without constructing a full entity.
+
 ## v1.6.7
 
 ### Bug fixes

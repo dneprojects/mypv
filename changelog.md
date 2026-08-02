@@ -3,6 +3,9 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.6.8
+- Fixed the integration failing to set up on Home Assistant 2026.8 ("Error setting up entry myPV"): the energy sensors were built with an argument Home Assistant no longer accepts. Older Home Assistant versions keep working unchanged.
+
 ## v1.6.7
 - Fixed the daily and monthly energy consumption sensors staying at 0 kWh with no unit on non-English installations: they now follow the power sensor by its internal id instead of its display name, so a translated or renamed power sensor is still found.
 
