@@ -613,6 +613,9 @@
       }
     },
     "update": {
+      "co_controller_firmware": {
+        "name": "Co-controller Firmware"
+      },
       "control_unit_firmware": {
         "name": "Control Unit Firmware"
       },
@@ -635,7 +638,7 @@
       "message": "The device did not finish installing the firmware within {minutes} minutes. It may still be rebooting; check the firmware version afterwards."
     },
     "firmware_install_unsupported": {
-      "message": "This device cannot install firmware from Home Assistant. Its control unit firmware is older than {version}; update it from the device's own web interface."
+      "message": "This device cannot install firmware from Home Assistant. Its control unit firmware does not support the update commands; update it from the device's own web interface."
     },
     "firmware_not_downloaded": {
       "message": "The device has no firmware ready to install."

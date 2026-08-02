@@ -11,17 +11,22 @@ MOCK_NAME: Final = f"{MOCK_MODEL} 123456"
 MYPV_DEV_JSN: Final[dict[str, Any]] = {
     "device": MOCK_MODEL,
     "sn": MOCK_SERIAL,
-    "fwversion": "a0001234",
+    "fwversion": "e0002500",
     "number": "123456",
 }
 
 # Response of http://<ip>/data.jsn (live values).
 DATA_JSN: Final[dict[str, Any]] = {
     "device": MOCK_MODEL,
-    "fwversion": "a0001234",
-    "fwversionlatest": "a0001234",
-    "psversion": "d0005678",
-    "psversionlatest": "d0005678",
+    "fwversion": "e0002500",
+    "fwversionlatest": "e0002500",
+    "psversion": "ep109",
+    "psversionlatest": "ep109",
+    "ps_upd_state": 0,
+    "coversion": "ec104",
+    "coversionlatest": "ec104",
+    "co_upd_state": 0,
+    "upd_percentage": 0,
     "power_elwa2": 1200,
     "temp1": 452,
     "status": 2,

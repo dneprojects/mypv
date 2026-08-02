@@ -379,6 +379,9 @@
       }
     },
     "update": {
+      "co_controller_firmware": {
+        "name": "Firmware Co-Controller"
+      },
       "control_unit_firmware": {
         "name": "Firmware Steuereinheit"
       },
@@ -401,7 +404,7 @@
       "message": "Das Gerät hat die Firmware-Installation nicht innerhalb von {minutes} Minuten abgeschlossen. Möglicherweise startet es noch neu; bitte anschließend die Firmware-Version prüfen."
     },
     "firmware_install_unsupported": {
-      "message": "Dieses Gerät kann die Firmware nicht aus Home Assistant heraus installieren. Die Firmware der Steuereinheit ist älter als {version}; bitte über die Weboberfläche des Geräts aktualisieren."
+      "message": "Dieses Gerät kann die Firmware nicht aus Home Assistant heraus installieren. Die Firmware der Steuereinheit unterstützt die Update-Befehle nicht; bitte über die Weboberfläche des Geräts aktualisieren."
     },
     "firmware_not_downloaded": {
       "message": "Auf dem Gerät liegt keine Firmware zur Installation bereit."

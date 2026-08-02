@@ -4,6 +4,19 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.7.0b2
+
+### Bug fixes
+- **The b1 version gate excluded every AC ELWA 2 — i.e. the device the feature was written for.** It required the `a` series (`>=a0020000`), taken from the my-PV library's *shared* base config. But the version series identifies the device family, not a common numbering: `a` is the AC•THOR, `e` the AC ELWA 2, `s` the Solthor, and the library's own ELWA config gates `setup.mainmode` on `>=e0001000`. Since upstream never evaluates any of these strings, the mismatch cannot surface there. Confirmed against hardware: the reporter's AC ELWA 2 runs `e0002500`, so b1 would never have offered the install button.
+- **Fix: a minimum per series plus a capability check.** `_INSTALL_MIN_FW = {"a": 20000, "e": 2500}`; a series without an entry (Solthor) stays report-only. Because a version number cannot be compared across series, `supports_remote_install()` additionally requires the device to report `upd_percentage` — the two ELWA captures bracket this nicely: the older `e0002410` in `fake_elwa.py` does not report the key at all, the `e0002500` capture does. `supports_remote_install()` therefore takes the whole data dict now, not just the version string.
+
+### New feature
+- **Co-controller firmware entity.** The devices report a third firmware part next to the control and power unit: `coversion` / `coversionlatest` / `co_upd_state` (`ec104` on the captured ELWA). The my-PV library knows `coversion` as "Co-controller version" but neither the latest-version nor the update-state key. Report-only, like the power unit parts.
+
+### Tests
+- The AC ELWA 2 fixture used `fwversion: "a0001234"` and `psversion: "d0005678"` — an AC•THOR-shaped version on an ELWA, which is precisely what hid the bug above. It now mirrors the real capture (`e0002500` / `ep109` / `ec104` plus `upd_percentage`, `ps_upd_state`, `co_upd_state`), so the translation-coverage test also exercises the new entity.
+- `test_remote_install_gate_by_series` covers both series' minimums and the unknown-series case; `test_remote_install_needs_the_progress_key` covers the capability half.
+
 ## v1.7.0b1
 
 ### New feature

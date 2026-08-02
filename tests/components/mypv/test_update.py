@@ -98,18 +98,36 @@ def test_update_percentage_only_while_downloading() -> None:
 @pytest.mark.parametrize(
     ("version", "supported"),
     [
+        ("e0002500", True),  # the AC ELWA 2 this was captured from
+        ("e0002410", False),  # older ELWA: below the minimum for its series
         ("a0021700", True),
-        ("a0020000", True),  # the documented minimum itself
+        ("a0020000", True),  # the documented AC.THOR minimum itself
         ("a0019999", False),
-        ("s0005555", False),  # Solthor series never takes the commands
+        ("s0005555", False),  # Solthor: no minimum known, stays report-only
         ("a002170", False),  # malformed (too short)
         ("axxxxxxx", False),
         (None, False),
     ],
 )
-def test_remote_install_version_gate(version: str | None, supported: bool) -> None:
-    """Only control unit firmware from a0020000 on knows the commands."""
-    assert supports_remote_install(version) is supported
+def test_remote_install_gate_by_series(version: str | None, supported: bool) -> None:
+    """Each device series has its own minimum; unknown series stay report-only."""
+    data: dict[str, Any] = {"upd_percentage": 0}
+    if version is not None:
+        data["fwversion"] = version
+    assert supports_remote_install(data) is supported
+
+
+def test_remote_install_needs_the_progress_key() -> None:
+    """Firmware new enough but without the download progress key is not offered.
+
+    The version number cannot be compared across series, so the presence of
+    ``upd_percentage`` is checked as well: the older e0002410 capture does not
+    report it at all.
+    """
+    assert supports_remote_install({"fwversion": "e0002500"}) is False
+    assert supports_remote_install({"fwversion": "e0002500", "upd_percentage": 0}) is (
+        True
+    )
 
 
 def _real_device(data: dict[str, Any]) -> MagicMock:
@@ -131,7 +149,7 @@ def test_install_feature_follows_the_version() -> None:
     the device itself never shows up.
     """
     old = MpvFwUpdate(
-        _real_device({"fwversion": "a0019999"}),
+        _real_device({"fwversion": "e0002410", "upd_percentage": 0}),
         "Control Unit Firmware",
         "fwversion",
         "fwversionlatest",
@@ -140,7 +158,7 @@ def test_install_feature_follows_the_version() -> None:
     assert old.supported_features is UpdateEntityFeature.PROGRESS
 
     new = MpvFwUpdate(
-        _real_device({"fwversion": "a0021700"}),
+        _real_device({"fwversion": "e0002500", "upd_percentage": 0}),
         "Control Unit Firmware",
         "fwversion",
         "fwversionlatest",
@@ -150,9 +168,11 @@ def test_install_feature_follows_the_version() -> None:
         UpdateEntityFeature.INSTALL | UpdateEntityFeature.PROGRESS
     )
 
-    # The power unit parts are report-only even on new firmware.
+    # The other parts are report-only even on new firmware.
     power_unit = MpvFwUpdate(
-        _real_device({"fwversion": "a0021700", "psversion": "d0008888"}),
+        _real_device(
+            {"fwversion": "e0002500", "upd_percentage": 0, "psversion": "ep109"}
+        ),
         "Power Unit Firmware",
         "psversion",
         "psversionlatest",

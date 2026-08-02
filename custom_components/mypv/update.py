@@ -20,7 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # Firmware parts that report an installed/latest version pair plus an
 # update-state key. Only the control unit can be updated from Home Assistant;
-# the power unit parts stay report-only.
+# the other parts stay report-only.
 #   name, installed key, latest key, update-state key
 FW_PARTS: tuple[tuple[str, str, str, str], ...] = (
     ("Control Unit Firmware", "fwversion", "fwversionlatest", "upd_state"),
@@ -31,6 +31,7 @@ FW_PARTS: tuple[tuple[str, str, str, str], ...] = (
         "p9sversionlatest",
         "p9s_upd_state",
     ),
+    ("Co-controller Firmware", "coversion", "coversionlatest", "co_upd_state"),
 )
 
 # Update-state values that mean the device is actively downloading or
@@ -46,12 +47,20 @@ _STATE_IDLE = 0
 _STATE_AVAILABLE = 1
 _STATE_DOWNLOADED = 10
 
-# The device only accepts ``firmware_download`` / ``firmware_update`` from this
-# control unit firmware onwards; before it, new firmware has to be installed
-# from the device's own web interface. Control unit versions are a letter
-# followed by seven digits ("a0021700"), and only the "a" series knows the
-# commands -- a Solthor ("s...") stays report-only.
-_INSTALL_MIN_FW = "a0020000"
+# Control unit firmware from which the device accepts ``firmware_download`` /
+# ``firmware_update``; below it, new firmware has to be installed from the
+# device's own web interface. Versions are a letter for the device series plus
+# seven digits, and the series number themselves independently:
+#   a - AC.THOR, minimum declared by the my-PV library's device configs
+#   e - AC ELWA 2, minimum from our own captures: an e0002410 reports no
+#       ``upd_percentage`` at all, an e0002500 does
+# A series that is not listed (Solthor, "s...") stays report-only.
+_INSTALL_MIN_FW: dict[str, int] = {"a": 20000, "e": 2500}
+
+# The download progress key. Firmware that knows the update flow reports it
+# even while idle, so its presence is the second half of the check above --
+# a version number alone cannot be compared across series.
+_PROGRESS_KEY = "upd_percentage"
 
 # How long to wait for the download and for the installation, and how often to
 # poll the device while waiting. The device serves one connection at a time, so
@@ -60,14 +69,16 @@ _STEP_TIMEOUT = 300
 _POLL_INTERVAL = 5
 
 
-def supports_remote_install(version: str | None) -> bool:
+def supports_remote_install(data: dict[str, Any]) -> bool:
     """Return whether this control unit firmware knows the update commands."""
-    if not version or len(version) != len(_INSTALL_MIN_FW):
+    version = data.get("fwversion")
+    if not isinstance(version, str) or len(version) != 8:
         return False
     series, digits = version[0], version[1:]
-    if series != _INSTALL_MIN_FW[0] or not digits.isdigit():
+    minimum = _INSTALL_MIN_FW.get(series)
+    if minimum is None or not digits.isdigit() or int(digits) < minimum:
         return False
-    return int(digits) >= int(_INSTALL_MIN_FW[1:])
+    return _PROGRESS_KEY in data
 
 
 async def async_setup_entry(
@@ -111,9 +122,10 @@ class MpvFwUpdate(MpvEntity, UpdateEntity):
         self._latest_key = latest_key
         self._state_key = state_key
         self._installing = False
-        # Only the control unit takes the commands, and only from a0020000 on.
+        # Only the control unit takes the commands, and only on new enough
+        # firmware of a series we have a minimum for.
         self._can_install = installed_key == "fwversion" and supports_remote_install(
-            device.data.get(installed_key)
+            device.data
         )
         if self._can_install:
             self._attr_supported_features |= UpdateEntityFeature.INSTALL
@@ -149,7 +161,7 @@ class MpvFwUpdate(MpvEntity, UpdateEntity):
         """Return the download progress, if the device is downloading."""
         if self._update_state() not in _DOWNLOADING_STATES:
             return None
-        percentage = self.device.data.get("upd_percentage")
+        percentage = self.device.data.get(_PROGRESS_KEY)
         if not isinstance(percentage, (int, float)):
             return None
         return int(percentage)
@@ -169,7 +181,6 @@ class MpvFwUpdate(MpvEntity, UpdateEntity):
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="firmware_install_unsupported",
-                translation_placeholders={"version": _INSTALL_MIN_FW},
             )
 
         self._installing = True
