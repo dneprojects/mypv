@@ -54,6 +54,33 @@ def test_string_unitless_sensor_has_no_state_class() -> None:
     assert sensor.state_class is None
 
 
+@pytest.mark.parametrize("raw", [101, "0101"], ids=["int", "str"])
+def test_outstat_keeps_measurement_for_any_raw_type(raw: Any) -> None:
+    """The output status sensor publishes a digit, so it stays a measurement.
+
+    Some AC-THOR 9s report ``rel1_out`` as a JSON string. Judging the state
+    class by that raw reading took it away (issue #50) although the entity
+    itself always publishes an int.
+    """
+    dev = _full_device({"rel1_out": raw})
+    sensor = MpvOutStatSensor(
+        dev, "rel1_out", MpvDescription("Output status", None, "binary_sensor")
+    )
+    assert sensor.state_class is SensorStateClass.MEASUREMENT
+
+
+def test_sensor_without_reading_keeps_measurement() -> None:
+    """A value missing at startup does not decide the state class.
+
+    ``sensor_always`` entities (Surplus) are built before their first reading
+    arrives; dropping the state class there made it depend on the startup
+    timing and flip between restarts (issue #50).
+    """
+    dev = _full_device({})
+    sensor = MpvSensor(dev, "surplus", MpvDescription("Surplus", None, "sensor_always"))
+    assert sensor.state_class is SensorStateClass.MEASUREMENT
+
+
 def test_unit_sensor_keeps_measurement() -> None:
     """A sensor with a unit keeps MEASUREMENT regardless of the cached value."""
     dev = _full_device({"power_solar": 500})

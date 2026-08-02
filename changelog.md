@@ -3,6 +3,11 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.6.9
+- Fixed "Entity no longer has a state class" for the AC-THOR 9s output status sensor: devices that report their relay state as text lost the long-term statistics for it.
+- Fixed the Surplus sensor losing its statistics depending on whether the device happened to report a value while Home Assistant was starting.
+- Fixed the "Control Value Timeout" control missing on devices that do not report this setting — it failed to be created instead of simply staying empty.
+
 ## v1.6.8
 - Fixed the integration failing to set up on Home Assistant 2026.8 ("Error setting up entry myPV"): the energy sensors were built with an argument Home Assistant no longer accepts. Older Home Assistant versions keep working unchanged.
 

@@ -4,6 +4,20 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.6.9
+
+### Bug fixes
+- **`sensor.<ac_thor_9s>_output_status` lost its state class on devices that report `rel1_out` as a string** (issue #50, "Die Entität hat keine Zustandsklasse mehr"). `MpvSensor.__init__` decides the state class by sniffing the *raw* first reading (`device.data.get(key)`), but `MpvOutStatSensor` publishes something else — the last digit of the zero-padded relay word, always an `int`. Reproduced with the 9s fixture: `rel1_out=101` → state `'1'`, `state_class=measurement`; `rel1_out="0101"` → same state `'1'`, `state_class=None`. The `isinstance(value, str)` branch in `_handle_coordinator_update` has been there since v0.9.4 ("Fix for AC-THOR 9s detection and binary values"), so string-reporting 9s are real. History: up to v1.3.2 every `MpvSensor` had a hardcoded `MEASUREMENT`; `e6c52b6` (v1.3.3) switched to "no unit → no state class", which took it away; `03e8c9d` (v1.4.5) gave it back for numeric readings — but only when the *raw* value is numeric. So this entity has been without a state class since v1.3.3 on those devices, and anyone updating from ≤1.3.2 now gets the statistics repair.
+- **Fix:** `MpvOutStatSensor` pins `_attr_state_class = MEASUREMENT` and opts out of the reading-based check via the new `_state_class_from_reading = False`. The class attribute alone is not enough — the base `__init__` assigns the *instance* attribute and would still override it. `MEASUREMENT` over a proper `ENUM` on purpose: an enum would change the states from a number to text and break the users' history and automations, while the value is numeric and did carry statistics before.
+- **The Surplus sensor's state class depended on startup timing.** `"surplus"` is `MpvDescription("Surplus", None, "sensor_always")` — numeric, unitless, and deliberately created *before* its first value arrives. The sniff then saw `None`, concluded "not numeric" and dropped the state class; when the device did report the key at startup, it kept it. That flips between restarts and raises the same repair repeatedly. Now only a reading that is actually present may take the state class away. Safe, because `sensor_always` is the only kind built without a sample (all others require `key in data`), and its single member is numeric.
+- **`number.<device>_control_value_timeout` was never created on devices without a `tout` setting** (found while reproducing the above: `Error adding entity number.… KeyError: 'tout'`). `MpvToutControl` is appended for every non-Solthor device (`mypv_device.py:235`), but `_handle_coordinator_update` read `self.device.setup["tout"]` unguarded, so the first update raised *while the entity was being added* and it disappeared entirely. It now skips the update and stays unknown, mirroring `MpvSensor`.
+
+### Tests
+- `test_outstat_keeps_measurement_for_any_raw_type` is parametrized over both raw types, `test_sensor_without_reading_keeps_measurement` covers the Surplus case, and `test_9s_entities_without_a_control_value_timeout` sets up a 9s whose `setup.jsn` has no `tout` and asserts the number entity exists and is unknown. All three verified to fail with the fixes stashed.
+
+### Open
+- What the last digit of `rel1_out` actually encodes is still unconfirmed (digits 0-2 are the Relais / Out 3 / Out 2 binary sensors). If it turns out to be a small enum rather than a level, an `ENUM` sensor would be the honest model — but only worth it alongside a migration that does not silently break existing statistics and automations.
+
 ## v1.6.8
 
 ### Bug fixes

@@ -3,12 +3,13 @@
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.mypv.const import CONF_HOSTS, DEV_IP, DOMAIN
-from homeassistant.const import CONF_PASSWORD
+from homeassistant.components.sensor import SensorStateClass
+from homeassistant.const import CONF_PASSWORD, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
-from .conftest import FakeWorld
-from .const import MOCK_IP, MOCK_SERIAL
+from .conftest import DeviceSpec, FakeWorld
+from .const import CONTROL_HTML, DATA_9S, MOCK_IP, MOCK_SERIAL, MYPV_DEV_9S, SETUP_9S
 
 PREFIX = "ac_elwa_2_123456"
 
@@ -169,3 +170,53 @@ async def test_energy_sensors_bind_to_the_translated_power_sensor(
         state = hass.states.get(energy_entity_id)
         assert state is not None
         assert state.attributes["source"] == power_entity_id
+
+
+async def test_9s_entities_without_a_control_value_timeout(
+    hass: HomeAssistant,
+    mock_device: FakeWorld,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    """A device whose setup carries no ``tout`` still gets its number entity.
+
+    The control value timeout entity is created for every non-Solthor device,
+    but not every model reports the key. Reading it unguarded raised while the
+    entity was being added, so it never appeared ("Error adding entity ...
+    KeyError: 'tout'").
+    """
+    mock_device.add(
+        MOCK_IP,
+        DeviceSpec(
+            dev=MYPV_DEV_9S,
+            json={"/data.jsn": DATA_9S, "/setup.jsn": SETUP_9S},
+            text={"/control.html": CONTROL_HTML},
+        ),
+    )
+    assert "tout" not in SETUP_9S
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=f"mypv_{MOCK_IP}",
+        data={DEV_IP: MOCK_IP, CONF_HOSTS: [MOCK_IP]},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    entity_id = entity_registry.async_get_entity_id(
+        "number", DOMAIN, f"{MYPV_DEV_9S['sn']}_Control Value Timeout"
+    )
+    assert entity_id is not None
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.state == STATE_UNKNOWN
+
+    # The output status sensor keeps its state class even though this device
+    # reports rel1_out as a plain int (issue #50 covers the string case).
+    out_status = entity_registry.async_get_entity_id(
+        "sensor", DOMAIN, f"{MYPV_DEV_9S['sn']}_Output status"
+    )
+    assert out_status is not None
+    out_state = hass.states.get(out_status)
+    assert out_state is not None
+    assert out_state.attributes["state_class"] == SensorStateClass.MEASUREMENT

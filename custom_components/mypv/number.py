@@ -145,7 +145,15 @@ class MpvToutControl(MpvEntity, NumberEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        self._attr_native_value = self.device.setup[self._key]
+        try:
+            self._attr_native_value = self.device.setup[self._key]
+        except KeyError, TypeError:
+            # The entity is created for every non-Solthor device, but not every
+            # model reports a control value timeout. Without this the very
+            # first update raises while the entity is being added, so it never
+            # appears at all.
+            _LOGGER.debug("%s does not report %s", self.device.name, self._key)
+            return
         self.async_write_ha_state()
 
     async def async_set_native_value(self, value: float) -> None:

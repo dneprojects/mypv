@@ -185,6 +185,9 @@ class MpvSensor(MpvEntity, SensorEntity):
     """Representation of myPV sensors."""
 
     _attr_state_class: SensorStateClass | None = SensorStateClass.MEASUREMENT
+    # Subclasses publishing a value derived from the raw reading pin their own
+    # state class and set this to False, so the check below leaves it alone.
+    _state_class_from_reading = True
 
     def __init__(self, device: MpyDevice, key: str, info: MpvDescription) -> None:
         """Initialize the sensor."""
@@ -201,11 +204,23 @@ class MpvSensor(MpvEntity, SensorEntity):
         # meter power sums), but drop it for non-numeric values (versions, IPs,
         # status text): HA rejects a measurement with a non-numeric value and
         # would record meaningless long-term statistics for it.
+        #
+        # Only an actually present reading may take the state class away. A
+        # missing one says nothing about the type -- ``sensor_always`` entities
+        # (Surplus) are built before their first value arrives, and dropping
+        # the state class for them made it depend on whether the device
+        # happened to report the key at startup, which flipped it between
+        # restarts and raised "no longer has a state class" repairs.
         sample = device.data.get(key)
         if sample is None:
             sample = device.setup.get(key)
         is_numeric = isinstance(sample, (int, float)) and not isinstance(sample, bool)
-        if info.unit is None and not is_numeric:
+        if (
+            self._state_class_from_reading
+            and info.unit is None
+            and sample is not None
+            and not is_numeric
+        ):
             self._attr_state_class = None
         if (
             key.split("_", maxsplit=1)[0] in ("power1", "power2", "power3")
@@ -237,6 +252,12 @@ class MpvSensor(MpvEntity, SensorEntity):
 
 class MpvOutStatSensor(MpvSensor):
     """Return output state from last digit for AC-Thor 9s."""
+
+    # Always a digit, whatever ``rel1_out`` looks like on the wire. Some 9s
+    # report it as a JSON string, and the base class judges the state class by
+    # the raw reading -- which is not what this entity publishes.
+    _attr_state_class: SensorStateClass | None = SensorStateClass.MEASUREMENT
+    _state_class_from_reading = False
 
     @callback
     def _handle_coordinator_update(self) -> None:
