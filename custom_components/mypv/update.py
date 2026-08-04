@@ -78,7 +78,7 @@ def supports_remote_install(data: dict[str, Any]) -> bool:
     minimum = _INSTALL_MIN_FW.get(series)
     if minimum is None or not digits.isdigit() or int(digits) < minimum:
         return False
-    return _PROGRESS_KEY in data
+    return _PROGRESS_KEY in data or "upd_files_left" in data
 
 
 async def async_setup_entry(
@@ -170,7 +170,7 @@ class MpvFwUpdate(MpvEntity, UpdateEntity):
         """Return the update state as an int, or None if it is unusable."""
         try:
             return int(self.device.data[self._state_key])
-        except KeyError, TypeError, ValueError:
+        except (KeyError, TypeError, ValueError):
             return None
 
     async def async_install(
