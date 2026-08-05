@@ -117,17 +117,31 @@ def test_remote_install_gate_by_series(version: str | None, supported: bool) -> 
     assert supports_remote_install(data) is supported
 
 
-def test_remote_install_needs_the_progress_key() -> None:
-    """Firmware new enough but without the download progress key is not offered.
+@pytest.mark.parametrize(
+    ("data", "supported"),
+    [
+        # Nothing but the version: not enough, the minimum for this series is
+        # inferred from captures rather than documented.
+        ({"fwversion": "e0002500"}, False),
+        # AC ELWA 2: counts percent.
+        ({"fwversion": "e0002500", "upd_percentage": 0}, True),
+        # AC.THOR a0022401: no percentage at all, a file counter instead
+        # (issue #52) -- requiring the percentage locked this family out.
+        ({"fwversion": "a0022401", "upd_files_left": 0}, True),
+        ({"fwversion": "a0022401"}, False),
+    ],
+    ids=["elwa_bare", "elwa_percentage", "acthor_files_left", "acthor_bare"],
+)
+def test_remote_install_needs_a_progress_indicator(
+    data: dict[str, Any], supported: bool
+) -> None:
+    """Firmware new enough but without any update indicator is not offered.
 
-    The version number cannot be compared across series, so the presence of
-    ``upd_percentage`` is checked as well: the older e0002410 capture does not
-    report it at all.
+    The version number cannot be compared across series, so the device also has
+    to report that it knows the flow -- and which key it uses for that differs
+    between the AC ELWA 2 and the AC.THOR.
     """
-    assert supports_remote_install({"fwversion": "e0002500"}) is False
-    assert supports_remote_install({"fwversion": "e0002500", "upd_percentage": 0}) is (
-        True
-    )
+    assert supports_remote_install(data) is supported
 
 
 def _real_device(data: dict[str, Any]) -> MagicMock:

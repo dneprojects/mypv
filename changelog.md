@@ -3,6 +3,9 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.7.1
+- Fixed the firmware installation not being offered on AC•THOR devices: they report their download progress differently from the AC ELWA 2, and the check only recognised the ELWA's way. Thanks to @marmer1 for the report and the fix.
+
 ## v1.7.0
 - The control unit firmware can now be installed from Home Assistant: the update entity downloads the firmware and starts the installation, with the download progress shown while it runs. Needs a recent enough control unit firmware (an AC ELWA 2 from e0002500, an AC•THOR from a0020000); older devices keep reporting the update but still have to be updated from the device's own web interface, as do the power unit and co-controller firmwares.
 - New entity for the co-controller firmware, which the devices report alongside the control and power unit firmware.

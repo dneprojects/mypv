@@ -4,6 +4,27 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.7.1
+
+### Bug fixes
+- **The capability half of `supports_remote_install()` locked out the AC.THOR**
+  (issue #52, fix contributed by @marmer1 in #53). The check required
+  `upd_percentage`, which I had generalised from exactly two AC ELWA 2 captures
+  (`e0002410` without it, `e0002500` with). An AC.THOR on `a0022401` reports no
+  percentage at all and counts remaining files instead (`upd_files_left`), so the
+  update entity offered `PROGRESS` only and the install stayed unavailable --
+  even though `a0020000`, the minimum for that series, is the one value taken
+  from my-PV's own library config rather than inferred. The version gate was
+  right; the extra safeguard built for the *guessed* e-series threshold was what
+  blocked the family with the documented one.
+- The second key is now named `_FILES_LEFT_KEY` alongside `_PROGRESS_KEY`, with
+  the family difference recorded next to it.
+
+### Tests
+- `test_remote_install_needs_a_progress_indicator` is parametrized over both
+  families and both bare cases; verified to fail for the AC.THOR case with the
+  fix reverted.
+
 ## v1.7.0
 
 Promotion of v1.7.0b2, code unchanged. The two beta sections below stay as the

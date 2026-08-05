@@ -57,10 +57,13 @@ _STATE_DOWNLOADED = 10
 # A series that is not listed (Solthor, "s...") stays report-only.
 _INSTALL_MIN_FW: dict[str, int] = {"a": 20000, "e": 2500}
 
-# The download progress key. Firmware that knows the update flow reports it
-# even while idle, so its presence is the second half of the check above --
-# a version number alone cannot be compared across series.
+# Keys that mark firmware which knows the update flow: it reports one of them
+# even while idle, and their presence is the second half of the check above --
+# a version number alone cannot be compared across series. Which one appears
+# depends on the family: an AC ELWA 2 counts percent, an AC.THOR counts the
+# files still to fetch (reported for a0022401, issue #52).
 _PROGRESS_KEY = "upd_percentage"
+_FILES_LEFT_KEY = "upd_files_left"
 
 # How long to wait for the download and for the installation, and how often to
 # poll the device while waiting. The device serves one connection at a time, so
@@ -78,7 +81,7 @@ def supports_remote_install(data: dict[str, Any]) -> bool:
     minimum = _INSTALL_MIN_FW.get(series)
     if minimum is None or not digits.isdigit() or int(digits) < minimum:
         return False
-    return _PROGRESS_KEY in data or "upd_files_left" in data
+    return _PROGRESS_KEY in data or _FILES_LEFT_KEY in data
 
 
 async def async_setup_entry(
@@ -170,7 +173,7 @@ class MpvFwUpdate(MpvEntity, UpdateEntity):
         """Return the update state as an int, or None if it is unusable."""
         try:
             return int(self.device.data[self._state_key])
-        except (KeyError, TypeError, ValueError):
+        except KeyError, TypeError, ValueError:
             return None
 
     async def async_install(
