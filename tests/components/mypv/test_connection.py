@@ -21,6 +21,7 @@ from custom_components.mypv.connection import (
     MypvHttpsConnection,
     _encode_form,
     create_connection,
+    describe_error,
 )
 
 
@@ -261,3 +262,43 @@ async def test_requests_are_serialised() -> None:
     )
 
     assert tracker.max_active == 1
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        # The reported issue: both log lines ended at the colon because these
+        # all stringify to "".
+        (TimeoutError(), "TimeoutError"),
+        (ClientConnectionError(), "ClientConnectionError"),
+        (MyPVConnectionError(), "MyPVConnectionError"),
+        # A message, where there is one, is kept.
+        (MyPVConnectionError("no route"), "MyPVConnectionError: no route"),
+    ],
+)
+def test_describe_error_names_a_silent_error(
+    error: BaseException, expected: str
+) -> None:
+    """An error with no message still identifies itself in the log."""
+    assert describe_error(error) == expected
+
+
+def test_describe_error_unwraps_the_cause() -> None:
+    """The transport wraps the real error, so the chain has to be reported.
+
+    ``_request`` raises ``MyPVConnectionError from exc``; without the cause the
+    log names the wrapper and loses the only informative part.
+    """
+    cause = TimeoutError()
+    err = MyPVConnectionError()
+    err.__cause__ = cause
+
+    assert describe_error(err) == "MyPVConnectionError <- TimeoutError"
+
+
+def test_describe_error_survives_a_cycle() -> None:
+    """A self-referential cause must not loop forever."""
+    err = MyPVConnectionError("outer")
+    err.__cause__ = err
+
+    assert describe_error(err) == "MyPVConnectionError: outer"

@@ -86,6 +86,8 @@ class MpyDevice:
         # capability, read from the ``data.jsn`` keys.
         self.control_failures = 0
         self.control_skip = 0
+        # Polls left before ``setup.jsn`` is read again; 0 means "read now".
+        self.setup_skip = 0
 
     async def initialize(self) -> None:
         """Get setup information, find sensors."""
@@ -242,7 +244,14 @@ class MpyDevice:
         # time, so concurrent requests collide and time out — which would flip
         # every entity to "unknown" on each failing cycle.
         self.data = await self.comm.data_update(self)
-        self.setup = await self.comm.setup_update(self)
+        # ``setup.jsn`` is configuration, not measurement: reading it every
+        # cycle tripled the request count against a device that serves one
+        # connection at a time. A write that changes it resets the counter, so
+        # the UI still confirms a user's change on the next poll.
+        if self.setup_skip > 0:
+            self.setup_skip -= 1
+        else:
+            self.setup = await self.comm.setup_update(self)
         if await self.comm.state_update(self):
             if "State" in self.state_dict:
                 self.state = int(self.state_dict["State"])

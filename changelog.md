@@ -3,6 +3,11 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.7.2
+- Entities no longer flip to "unavailable" when the device misses a single reply. The heater serves one connection at a time, so an occasional timeout is normal; brief dropouts are now ridden out and only a lasting one is reported, which removes the gaps that appeared in long-term graphs.
+- Communication errors now say what actually failed. Most of them carry no message of their own, so the log line ended at the colon and named nothing -- it now reports the error type and the underlying cause.
+- The device is polled less: its settings are re-read every two minutes instead of every ten seconds, which cuts a third of the requests. Changes made in Home Assistant are still confirmed immediately, and settings changed at the device itself appear within two minutes.
+
 ## v1.7.1
 - Fixed the firmware installation not being offered on AC•THOR devices: they report their download progress differently from the AC ELWA 2, and the check only recognised the ELWA's way. Thanks to @marmer1 for the report and the fix.
 

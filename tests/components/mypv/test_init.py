@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.mypv import async_remove_config_entry_device
+from custom_components.mypv.communicate import _POLL_FAILURES_TOLERATED
 from custom_components.mypv.const import COMM_HUB, CONF_HOSTS, DEV_IP, DOMAIN
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import ATTR_ENTITY_ID, CONF_PASSWORD
@@ -148,20 +149,53 @@ async def test_setup_old_http_entry_new_firmware_starts_reauth(
     )
 
 
+async def test_coordinator_rides_out_a_brief_dropout(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    mock_device: FakeWorld,
+) -> None:
+    """A short dropout keeps the last values instead of blanking every entity.
+
+    The device serves one connection at a time, so an occasional timeout is
+    normal; failing on the first one produced gaps in users' graphs.
+    """
+    entry = setup_integration
+    comm = hass.data[DOMAIN][entry.entry_id][COMM_HUB]
+    assert comm.last_update_success
+
+    mock_device.spec().error = TimeoutError()
+    for _ in range(_POLL_FAILURES_TOLERATED):
+        await comm.async_refresh()
+        await hass.async_block_till_done()
+        assert comm.last_update_success is True
+
+    # Recovering resets the budget, so the next dropout is ridden out again.
+    mock_device.spec().error = None
+    await comm.async_refresh()
+    await hass.async_block_till_done()
+    assert comm.last_update_success is True
+
+    mock_device.spec().error = TimeoutError()
+    await comm.async_refresh()
+    await hass.async_block_till_done()
+    assert comm.last_update_success is True
+
+
 async def test_coordinator_update_failure(
     hass: HomeAssistant,
     setup_integration: MockConfigEntry,
     mock_device: FakeWorld,
 ) -> None:
-    """A failed refresh marks the coordinator update as unsuccessful."""
+    """A dropout that outlasts the tolerance marks the update unsuccessful."""
     entry = setup_integration
     comm = hass.data[DOMAIN][entry.entry_id][COMM_HUB]
     assert comm.last_update_success
 
     mock_device.spec().error = TimeoutError()
 
-    await comm.async_refresh()
-    await hass.async_block_till_done()
+    for _ in range(_POLL_FAILURES_TOLERATED + 1):
+        await comm.async_refresh()
+        await hass.async_block_till_done()
     assert comm.last_update_success is False
 
 

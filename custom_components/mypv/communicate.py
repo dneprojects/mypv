@@ -26,6 +26,7 @@ from .connection import (
     MypvHttpConnection,
     MypvHttpsConnection,
     create_connection,
+    describe_error,
 )
 from .const import CONF_HOSTS, DOMAIN
 
@@ -44,6 +45,16 @@ _COMM_ERRORS = (TimeoutError, aiohttp.ClientError, MyPVConnectionError)
 # the read backs off to every _CONTROL_RETRY_CYCLES polls (~5 min at 10 s).
 _CONTROL_FAILURES_BEFORE_BACKOFF = 3
 _CONTROL_RETRY_CYCLES = 30
+# Consecutive failing polls ridden out before the entities go unavailable
+# (~30 s at the 10 s interval).
+_POLL_FAILURES_TOLERATED = 3
+# ``setup.jsn`` carries only settings (targets, modes, ``sec_level``), never a
+# measurement, but it used to be read on every poll -- a third of the request
+# load against a device that serves one connection at a time. Re-read it every
+# ~2 min, immediately after a write that changes it, and right after a failed
+# poll: ``sec_level`` selects HTTP vs HTTPS for the other endpoints, so a mode
+# change at the device makes them fail until this is read again.
+_SETUP_REFRESH_CYCLES = 12
 
 
 class MypvCommunicator(DataUpdateCoordinator[None]):
@@ -60,6 +71,8 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
         # One library-backed connection per device; each handles its own session
         # and authentication and serialises the device's requests internally.
         self.connections: dict[str, MypvHttpConnection | MypvHttpsConnection] = {}
+        self._poll_failures = 0
+        self._had_poll_success = False
         super().__init__(
             hass,
             _LOGGER,
@@ -172,7 +185,19 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
         return self.connections[device.ip]
 
     async def _async_update_data(self) -> None:
-        """Update status of all ELWA devices."""
+        """Update status of all ELWA devices, riding out a brief dropout.
+
+        The device serves one connection at a time, so a single poll can time
+        out while the device is busy with its own cloud upload or the myPV app.
+        Reporting that immediately flips every entity to "unavailable", which
+        showed up as gaps in users' graphs even though the device was fine
+        moments later. Tolerate a few consecutive failures before giving up --
+        but only once a first poll has succeeded, so a device that never
+        answers still fails setup instead of appearing to work.
+
+        A failure also schedules a ``setup.jsn`` read, since a changed
+        ``sec_level`` is both a plausible cause and only visible there.
+        """
         try:
             for mpv_dev in self.devices:
                 await mpv_dev.update()
@@ -186,7 +211,29 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
             json.JSONDecodeError,
             MyPVConnectionError,
         ) as err:
-            raise UpdateFailed(f"Error communicating with myPV device: {err}") from err
+            # A failed read may mean the device changed encryption mode, which
+            # only ``setup.jsn`` reveals -- so re-read it on the next poll
+            # instead of waiting out the throttle while every other endpoint
+            # keeps failing against the wrong protocol.
+            for mpv_dev in self.devices:
+                self.request_setup_refresh(mpv_dev)
+            self._poll_failures += 1
+            if (
+                self._had_poll_success
+                and self._poll_failures <= _POLL_FAILURES_TOLERATED
+            ):
+                self.logger.debug(
+                    "Poll %s of %s failed, keeping the last values: %s",
+                    self._poll_failures,
+                    _POLL_FAILURES_TOLERATED,
+                    describe_error(err),
+                )
+                return
+            raise UpdateFailed(
+                f"Error communicating with myPV device: {describe_error(err)}"
+            ) from err
+        self._poll_failures = 0
+        self._had_poll_success = True
 
     async def data_update(self, device: MpyDevice) -> dict[str, Any]:
         """Update device data info."""
@@ -202,7 +249,17 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
         connection = self._connection(device)
         setup = await connection.get_json("/setup.jsn")
         connection.set_sec_level(setup.get("sec_level"))
+        device.setup_skip = _SETUP_REFRESH_CYCLES
         return setup
+
+    @staticmethod
+    def request_setup_refresh(device: MpyDevice) -> None:
+        """Make the next poll re-read ``setup.jsn``.
+
+        Called after a write that changes it, so the throttled read does not
+        leave a user's own change unconfirmed for minutes.
+        """
+        device.setup_skip = 0
 
     async def state_update(self, device: MpyDevice) -> bool:
         """Update control state, backing off on failure but never giving up.
@@ -225,9 +282,13 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
         except _COMM_ERRORS as err_msg:
             device.control_failures += 1
             if device.control_failures <= _CONTROL_FAILURES_BEFORE_BACKOFF:
-                self.logger.warning("Error during control update: %s", err_msg)
+                self.logger.warning(
+                    "Error during control update: %s", describe_error(err_msg)
+                )
             else:
-                self.logger.debug("Control update still failing: %s", err_msg)
+                self.logger.debug(
+                    "Control update still failing: %s", describe_error(err_msg)
+                )
                 device.control_skip = _CONTROL_RETRY_CYCLES
             return False
         device.control_failures = 0
@@ -255,8 +316,11 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
             self._start_reauth(err)
             return False
         except _COMM_ERRORS as err_msg:
-            self.logger.warning("Error during set value command: %s", err_msg)
+            self.logger.warning(
+                "Error during set value command: %s", describe_error(err_msg)
+            )
             return False
+        self.request_setup_refresh(device)
         return True
 
     async def set_power(self, device: MpyDevice, act_pow: int) -> bool:
@@ -270,7 +334,9 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
             self._start_reauth(err)
             return False
         except _COMM_ERRORS as err_msg:
-            self.logger.warning("Error during set power command: %s", err_msg)
+            self.logger.warning(
+                "Error during set power command: %s", describe_error(err_msg)
+            )
             return False
         return True
 
@@ -282,8 +348,11 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
             self._start_reauth(err)
             return False
         except _COMM_ERRORS as err_msg:
-            self.logger.warning("Error during set control mode command: %s", err_msg)
+            self.logger.warning(
+                "Error during set control mode command: %s", describe_error(err_msg)
+            )
             return False
+        self.request_setup_refresh(device)
         return True
 
     async def set_pid_power(self, device: MpyDevice, act_pow: int) -> bool:
@@ -297,7 +366,9 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
             self._start_reauth(err)
             return False
         except _COMM_ERRORS as err_msg:
-            self.logger.warning("Error during set pid power command: %s", err_msg)
+            self.logger.warning(
+                "Error during set pid power command: %s", describe_error(err_msg)
+            )
             return False
         return True
 
@@ -312,8 +383,11 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
             self._start_reauth(err)
             return False
         except _COMM_ERRORS as err_msg:
-            self.logger.warning("Error during switch command: %s", err_msg)
+            self.logger.warning(
+                "Error during switch command: %s", describe_error(err_msg)
+            )
             return False
+        self.request_setup_refresh(device)
         return True
 
     async def activate_boost(self, device: MpyDevice, mode: int = 1) -> bool:
@@ -324,8 +398,11 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
             self._start_reauth(err)
             return False
         except _COMM_ERRORS as err_msg:
-            self.logger.warning("Error during boost command: %s", err_msg)
+            self.logger.warning(
+                "Error during boost command: %s", describe_error(err_msg)
+            )
             return False
+        self.request_setup_refresh(device)
         return True
 
     async def firmware_command(self, device: MpyDevice, command: str) -> bool:
@@ -341,7 +418,9 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
             self._start_reauth(err)
             return False
         except _COMM_ERRORS as err_msg:
-            self.logger.warning("Error during %s command: %s", command, err_msg)
+            self.logger.warning(
+                "Error during %s command: %s", command, describe_error(err_msg)
+            )
             return False
         return True
 

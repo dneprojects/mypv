@@ -8,6 +8,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.mypv.communicate import (
     _CONTROL_FAILURES_BEFORE_BACKOFF,
     _CONTROL_RETRY_CYCLES,
+    _SETUP_REFRESH_CYCLES,
     MypvCommunicator,
 )
 from custom_components.mypv.connection import MyPVAuthenticationError
@@ -195,3 +196,76 @@ async def test_poll_auth_error_starts_reauth(
 
     assert comm.last_update_success is False
     assert _reauth_started(hass)
+
+
+async def test_setup_is_not_read_on_every_poll(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    mock_device: FakeWorld,
+) -> None:
+    """``setup.jsn`` carries settings only, so it is read on a slow cadence.
+
+    Reading it every cycle tripled the request count against a device that
+    serves one connection at a time; the measurements in ``data.jsn`` are
+    unaffected and still fetched on every poll.
+    """
+    comm, _ = _comm_device(hass, setup_integration)
+
+    def _counts() -> tuple[int, int]:
+        requested = mock_device.requested
+        return requested.count("/data.jsn"), requested.count("/setup.jsn")
+
+    data_before, setup_before = _counts()
+    polls = 2 * _SETUP_REFRESH_CYCLES
+    for _ in range(polls):
+        await comm.async_refresh()
+    await hass.async_block_till_done()
+
+    data_after, setup_after = _counts()
+    # Every poll reads the measurements ...
+    assert data_after - data_before == polls
+    # ... but setup at most once per window (plus the one already part-elapsed).
+    assert setup_after - setup_before <= polls // _SETUP_REFRESH_CYCLES + 1
+    # It is still read: throttled, not dropped.
+    assert setup_after > setup_before
+
+
+async def test_write_makes_the_next_poll_reread_setup(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    mock_device: FakeWorld,
+) -> None:
+    """A user's own change is confirmed on the next poll, not minutes later."""
+    comm, device = _comm_device(hass, setup_integration)
+    setup_before = mock_device.requested.count("/setup.jsn")
+
+    assert await comm.switch(device, "devmode", True) is True
+
+    await comm.async_refresh()
+    await hass.async_block_till_done()
+    assert mock_device.requested.count("/setup.jsn") == setup_before + 1
+
+
+async def test_failed_poll_schedules_a_setup_reread(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    mock_device: FakeWorld,
+) -> None:
+    """A failure re-reads ``setup.jsn``, the only place ``sec_level`` shows up.
+
+    A changed encryption mode makes every other endpoint fail against the wrong
+    protocol, so waiting out the throttle would keep the entry broken for
+    minutes.
+    """
+    comm, _ = _comm_device(hass, setup_integration)
+    setup_before = mock_device.requested.count("/setup.jsn")
+
+    mock_device.spec().error = TimeoutError()
+    await comm.async_refresh()
+    await hass.async_block_till_done()
+
+    mock_device.spec().error = None
+    await comm.async_refresh()
+    await hass.async_block_till_done()
+
+    assert mock_device.requested.count("/setup.jsn") > setup_before

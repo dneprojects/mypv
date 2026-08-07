@@ -4,6 +4,55 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.7.2
+
+Prompted by issue #54 ("All entities reported as unavailable"), whose two log
+excerpts both ended at the colon with nothing after it.
+
+### Bug fixes
+- **`MyPVConnectionError` is raised bare, so `%s` logged nothing** -- the
+  reported symptom, and the reason the report could not identify its own cause.
+  `TimeoutError`, `ClientConnectionError`, `ClientOSError` and
+  `ClientPayloadError` all stringify to `""` as well, so even passing the
+  original through would have logged an empty line for the common cases. New
+  `describe_error()` in `connection.py` names the type and walks `__cause__`
+  (cycle-guarded), and every `_COMM_ERRORS` log site in `communicate.py` now
+  routes through it. The transport already chained the real error via
+  `raise MyPVConnectionError from exc`; only the formatting discarded it.
+
+### Behaviour
+- **A single failed poll no longer blanks every entity.** `MpvEntity` is a plain
+  `CoordinatorEntity`, so `last_update_success = False` made all of them
+  unavailable at once -- the sawtooth in the reporter's graph. `_async_update_data`
+  now tolerates `_POLL_FAILURES_TOLERATED` (3, ~30 s) consecutive failures,
+  keeping the last values, and only then raises `UpdateFailed`. Guarded by
+  `_had_poll_success` so a device that never answers still fails setup instead
+  of appearing to work.
+- **`setup.jsn` is no longer read every cycle.** Per poll and device the
+  integration issued three sequential requests (`data.jsn`, `setup.jsn`,
+  `control.html`) against a web server that serves one connection at a time,
+  with a 5 s request timeout at a 10 s interval. `setup.jsn` backs eight
+  entities, all of them settings (`devmode`, `bstmode`, `ww1target`, `ww1boost`,
+  `ctrl` twice, `tout`, `sec_level`) -- no measurement, so throttling it costs
+  no resolution. Now read every `_SETUP_REFRESH_CYCLES` (12, ~2 min) via
+  `MpyDevice.setup_skip`, cutting the request load by a third.
+  - `request_setup_refresh()` resets the counter after every write that touches
+    `/setup.jsn` (`set_number`, `set_control_mode`, `switch`, `activate_boost`),
+    so a user's own change is still confirmed on the next poll.
+  - A failed poll also resets it: `sec_level` selects HTTP vs HTTPS per endpoint
+    at runtime, and it is visible only in `setup.jsn`. An encryption-mode change
+    at the device would otherwise keep every other endpoint failing against the
+    wrong protocol until the throttle elapsed.
+
+### Tests
+- `describe_error` over the silent error types, the cause chain and a
+  self-referential cause.
+- The tolerance both ways: a short dropout keeps `last_update_success` true and
+  the budget resets on recovery; a lasting one still fails.
+- The `setup.jsn` cadence asserted as a property (at most one read per window
+  while every poll reads `data.jsn`), not as an exact count -- the counter is
+  already part-elapsed when a test starts.
+
 ## v1.7.1
 
 ### Bug fixes

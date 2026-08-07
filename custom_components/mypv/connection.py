@@ -41,6 +41,29 @@ class MyPVAuthenticationError(Exception):
     """Raised when authentication with the device fails."""
 
 
+def describe_error(err: BaseException) -> str:
+    """Return a message that names an error even when it carries no text.
+
+    ``TimeoutError``, ``ClientConnectionError``, ``ClientOSError`` and
+    ``ClientPayloadError`` all stringify to the empty string, and
+    ``MyPVConnectionError`` is raised without a message -- so logging ``%s``
+    alone produces a line that ends at the colon and says nothing about what
+    failed. Name the type, and unwrap the cause the transport chained on, so a
+    user report actually identifies the failure.
+    """
+    parts = []
+    seen: set[int] = set()
+    current: BaseException | None = err
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        text = str(current)
+        parts.append(
+            f"{type(current).__name__}: {text}" if text else type(current).__name__
+        )
+        current = current.__cause__
+    return " <- ".join(parts)
+
+
 def _encode_form(params: dict[str, Any]) -> str:
     """Encode a form body the way the device web app does (encodeURIComponent)."""
     return "&".join(
