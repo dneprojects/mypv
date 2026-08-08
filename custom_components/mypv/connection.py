@@ -21,7 +21,7 @@ import json
 from typing import Any
 from urllib.parse import quote, urlencode, urlunsplit
 
-from aiohttp import ClientError, ClientSession, ClientTimeout
+from aiohttp import ClientConnectorError, ClientError, ClientSession, ClientTimeout
 
 _REQUEST_TIMEOUT = ClientTimeout(total=5)
 # Characters JavaScript's encodeURIComponent leaves unescaped on top of the
@@ -56,7 +56,14 @@ def describe_error(err: BaseException) -> str:
     current: BaseException | None = err
     while current is not None and id(current) not in seen:
         seen.add(id(current))
-        text = str(current)
+        try:
+            text = str(current)
+        except Exception:  # noqa: BLE001 - never let logging raise
+            # ``ClientConnectorError.__str__`` dereferences its connection key,
+            # which is not always populated. This runs inside ``except``
+            # handlers, so a raise here would replace a handled connection
+            # error with a crash.
+            text = "<unprintable>"
         parts.append(
             f"{type(current).__name__}: {text}" if text else type(current).__name__
         )
@@ -101,10 +108,21 @@ class _Connection:
         # (e.g. 429 rate limit) so entities keep their values instead of going
         # unavailable -- the my-pv library likewise never crashes on such a body.
         self._cache: dict[str, str] = {}
+        # Set once the device has refused the plain-HTTP port while claiming
+        # ``sec_level`` 0; from then on the downgrade below is skipped.
+        self._http_refused = False
 
     def set_sec_level(self, sec_level: Any) -> None:
         """Record the device's encryption mode (from ``setup.jsn``)."""
         self._sec_level = sec_level if isinstance(sec_level, int) else None
+
+    def _downgrades_to_http(self, path: str) -> bool:
+        """Return whether ``path`` would be sent over plain HTTP for mode 0."""
+        return (
+            self._sec_level == 0
+            and not self._http_refused
+            and path in self._HTTP_IN_SEC0
+        )
 
     def _scheme_for(self, path: str) -> tuple[str, bool]:
         """Return ``(protocol, ssl)`` for a path, honouring the encryption mode.
@@ -113,12 +131,27 @@ class _Connection:
         use HTTPS. ``setup.jsn`` (and the login) always use the connection's own
         protocol, so on new firmware they stay on HTTPS even in mode 0.
         """
-        if self._sec_level == 0 and path in self._HTTP_IN_SEC0:
+        if self._downgrades_to_http(path):
             return "http", True  # ssl is irrelevant over http
         return self._PROTOCOL, self._SSL
 
     def _url(self, path: str, query: str = "", protocol: str | None = None) -> str:
         return urlunsplit([protocol or self._PROTOCOL, self._host, path, query, None])
+
+    def _connection_error(self, url: str, detail: str = "") -> MyPVConnectionError:
+        """Build a connection error naming the URL and the encryption mode.
+
+        Which scheme a request went out on follows ``sec_level``, so a failure
+        is only diagnosable together with it: a refusal on the plain-HTTP port
+        while the device reports mode 0 means the reported mode is wrong, and
+        that has to be visible in the log without asking the reporter first.
+        """
+        mode = "unknown" if self._sec_level is None else str(self._sec_level)
+        if self._http_refused:
+            mode += ", http refused"
+        return MyPVConnectionError(
+            f"{url} (sec_level {mode}){f': {detail}' if detail else ''}"
+        )
 
     async def open(self) -> bool:
         """Open a fresh session, read the device identification, authenticate.
@@ -187,7 +220,7 @@ class _Connection:
         cache and be served as if it were device state.
         """
         if not self.is_open() and not await self.open():
-            raise MyPVConnectionError
+            raise self._connection_error(self._url(path), "cannot open a session")
         protocol, ssl = self._scheme_for(path)
         cacheable = not query
         url = self._url(path, urlencode(query or {}), protocol)
@@ -202,10 +235,21 @@ class _Connection:
                         return self._cache[path]
                     if text.strip():
                         return text
-                    raise MyPVConnectionError
+                    raise self._connection_error(
+                        url, f"HTTP {response.status} with an empty body"
+                    )
         except (ClientError, TimeoutError) as exc:
             await self.close()
-            raise MyPVConnectionError from exc
+            if isinstance(exc, ClientConnectorError) and self._downgrades_to_http(path):
+                # The device reports ``sec_level`` 0 yet refuses the plain-HTTP
+                # port. A refusal there is the signature of encryption mode 1/2
+                # (field-confirmed), so the reported mode is wrong or stale --
+                # and the HTTPS server runs in every mode. Stop downgrading and
+                # retry over the connection's own protocol rather than failing
+                # every poll until someone reloads the entry.
+                self._http_refused = True
+                return await self._request(path, query)
+            raise self._connection_error(url) from exc
         if cacheable:
             self._cache[path] = text
         return text
@@ -283,7 +327,7 @@ class MypvHttpsConnection(_Connection):
         """
         async with self._io_lock:
             if not self.is_open() and not await self.open():
-                raise MyPVConnectionError
+                raise self._connection_error(self._url(path), "cannot open a session")
             body = _encode_form({**params, "pw": self._pw} if self._pw else params)
             try:
                 assert self._session is not None
@@ -295,7 +339,7 @@ class MypvHttpsConnection(_Connection):
                     return await response.text()
             except (ClientError, TimeoutError) as exc:
                 await self.close()
-                raise MyPVConnectionError from exc
+                raise self._connection_error(self._url(path)) from exc
 
 
 def create_connection(

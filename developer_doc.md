@@ -4,6 +4,54 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.7.3
+
+Follow-up on issue #54: 1.7.2 made the cause visible, and it was not the one
+its three changes addressed. The reporter's new log read
+`MyPVConnectionError <- ClientConnectorError: Cannot connect to host
+192.168.21.75:80 <- ConnectionRefusedError`.
+
+### Diagnosis
+- **Refused, not timed out, and on port 80.** The integration only sends
+  `data.jsn` and `control.html` over plain HTTP (`_HTTP_IN_SEC0`), and only when
+  `sec_level == 0`. Our own field data (see the v1.6.6 section) records the
+  converse: a refusal on port 80 is the signature of encryption mode 1/2. So the
+  device behaves like mode 1/2 while we believe it is in mode 0.
+- **It is the HTTPS connection.** A `MyPVConnectionError` *with* a chained cause
+  can only come from the `except ... raise ... from exc` path, i.e. an open
+  session whose request failed. An HTTP-only entry would already have failed in
+  `open()`, which returns `False` and produced a cause-less error. That also
+  explains the persistence the reporter saw: with `sec_level 0` on an HTTPS
+  connection the port-80 request fails on *every* poll, forever.
+- **It does retry.** `DataUpdateCoordinator` logs a failure only while
+  `last_update_success` is still true (`update_coordinator.py:438`), and the
+  `control.html` backoff drops to debug after three tries -- hence three lines
+  and then silence, which read as "it gave up".
+
+### Fixes
+- **The HTTP downgrade is no longer trusted blindly.** A `ClientConnectorError`
+  on a downgraded path sets `_http_refused`, and the request is retried over the
+  connection's own protocol; `_downgrades_to_http()` then skips the downgrade for
+  the rest of the connection's life. The HTTPS server runs in every mode, so the
+  fallback is safe, and it heals without a reload. Not reset on recovery: HTTPS
+  works in mode 0 too, so there is nothing to gain by downgrading again.
+- **`MyPVConnectionError` now carries the URL and the reported mode**
+  (`_connection_error()`), replacing every bare `raise`. The mismatch that took a
+  round trip with the reporter to establish is now in the first log line:
+  `http://…:80 … (sec_level 0)`.
+- **`describe_error()` can no longer raise.** `ClientConnectorError.__str__`
+  dereferences `self._conn_key`, which is not always populated -- found by the
+  new tests, where a synthetic instance made the formatter throw. Since it runs
+  inside `except` handlers, that would have turned a handled connection error
+  into a crash: a defect introduced by 1.7.2 itself.
+
+### Open question
+Whether `sec_level` really reads 0 on the reporter's device decides the root
+fix: if it does, the downgrade rule is wrong and `_HTTP_IN_SEC0` should go
+entirely; if it does not, our stored value went stale and that is where the bug
+lives. The "Encryption" diagnostic sensor shows the value directly. The fallback
+is correct either way, which is why it shipped without waiting for the answer.
+
 ## v1.7.2
 
 Prompted by issue #54 ("All entities reported as unavailable"), whose two log

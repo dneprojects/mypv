@@ -11,7 +11,7 @@ import asyncio
 from typing import Self
 from unittest.mock import AsyncMock
 
-from aiohttp.client_exceptions import ClientConnectionError
+from aiohttp.client_exceptions import ClientConnectionError, ClientConnectorError
 import pytest
 
 from custom_components.mypv.connection import (
@@ -79,6 +79,10 @@ class _FakeSession:
         self.posts: list[dict[str, object]] = []
         self.responses: list[_FakeResponse] = []
         self.closed = False  # queried by the library's is_open()
+
+    async def close(self) -> None:
+        """Mark the session closed, as aiohttp does on a connection failure."""
+        self.closed = True
 
     def get(self, url: str, ssl: object = None) -> _FakeResponse:
         self.calls.append((url, ssl))
@@ -302,3 +306,86 @@ def test_describe_error_survives_a_cycle() -> None:
     err.__cause__ = err
 
     assert describe_error(err) == "MyPVConnectionError: outer"
+
+
+async def test_refused_http_downgrade_falls_back_to_https() -> None:
+    """A device that refuses port 80 while reporting mode 0 is not left broken.
+
+    Reported in issue #54: the transport downgraded ``control.html`` to plain
+    HTTP because ``sec_level`` read 0, and the device answered with
+    ``ConnectionRefusedError`` -- which our own field data identifies as the
+    signature of encryption mode 1/2. Since the HTTPS server runs in every mode,
+    drop the downgrade instead of failing every poll until someone reloads.
+    """
+    refused = ClientConnectorError(None, OSError(111, "refused"))
+    attempts = [_FakeResponse(enter_exc=refused)]
+    session = _FakeSession(lambda: attempts.pop(0) if attempts else _FakeResponse())
+    conn = _https_connection(session, "secret")
+    conn.set_sec_level(0)
+
+    async def _reopen() -> bool:
+        # The real ``open()`` reinstalls the session the failure closed.
+        conn._session = session
+        session.closed = False
+        return True
+
+    conn.open = _reopen  # type: ignore[method-assign]
+
+    assert await conn.get_text("/control.html") == "OK"
+
+    # First attempt downgraded, the retry used the connection's own protocol.
+    assert session.calls[0][0].startswith("http://")
+    assert session.calls[1][0].startswith("https://")
+
+    # And it does not downgrade again.
+    session.calls.clear()
+    assert await conn.get_text("/control.html") == "OK"
+    assert session.calls[0][0].startswith("https://")
+
+
+async def test_refused_https_still_raises() -> None:
+    """A refusal that is not the mode-0 downgrade stays a connection error."""
+    session = _FakeSession(
+        lambda: _FakeResponse(
+            enter_exc=ClientConnectorError(None, OSError(111, "refused"))
+        )
+    )
+    conn = _https_connection(session, "secret")
+    conn.set_sec_level(1)  # no downgrade in this mode
+
+    with pytest.raises(MyPVConnectionError):
+        await conn.get_text("/control.html")
+
+
+def test_describe_error_survives_an_unprintable_error() -> None:
+    """Formatting an error must never raise -- it runs inside except handlers.
+
+    ``ClientConnectorError.__str__`` dereferences its connection key, which is
+    not always populated; a raise here would turn a handled connection error
+    into a crash.
+    """
+
+    class _Unprintable(Exception):
+        def __str__(self) -> str:
+            raise AttributeError("no connection key")
+
+    assert describe_error(_Unprintable()) == "_Unprintable: <unprintable>"
+
+
+def test_connection_error_names_the_url_and_mode() -> None:
+    """The error carries the scheme actually used and the reported mode.
+
+    Issue #54 needed both to be diagnosable: a plain-HTTP URL together with
+    ``sec_level 0`` is what shows the reported mode to be wrong.
+    """
+    conn = _https_connection(_FakeSession(_FakeResponse), "secret")
+    conn.set_sec_level(0)
+
+    err = conn._connection_error("http://1.2.3.4/control.html")
+    assert str(err) == "http://1.2.3.4/control.html (sec_level 0)"
+
+    conn._http_refused = True
+    err = conn._connection_error("https://1.2.3.4/control.html", "HTTP 404")
+    assert (
+        str(err) == "https://1.2.3.4/control.html (sec_level 0, http refused): HTTP 404"
+    )

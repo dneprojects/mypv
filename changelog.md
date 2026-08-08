@@ -3,6 +3,10 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.7.3
+- Fixed the entities staying unavailable on devices that refuse plain HTTP: the integration followed the encryption mode the device reported and sent two of its requests unencrypted, which such a device rejects every time. It now notices the refusal, switches those requests to HTTPS and keeps them there, instead of failing until the entry is reloaded.
+- Connection errors now name the address and the encryption mode they were sent with, so a report shows straight away when the two do not match.
+
 ## v1.7.2
 - Entities no longer flip to "unavailable" when the device misses a single reply. The heater serves one connection at a time, so an occasional timeout is normal; brief dropouts are now ridden out and only a lasting one is reported, which removes the gaps that appeared in long-term graphs.
 - Communication errors now say what actually failed. Most of them carry no message of their own, so the log line ended at the colon and named nothing -- it now reports the error type and the underlying cause.
