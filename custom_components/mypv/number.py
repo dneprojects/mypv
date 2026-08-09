@@ -1,6 +1,5 @@
 """Numbers of myPV integration."""
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -44,6 +43,10 @@ class MpvPowerControl(MpvEntity, NumberEntity):
         super().__init__(device, info.name)
         self._key = key
         self._type = info.kind
+        # Set while the device is known to ignore control writes, so the
+        # warning is logged once per mode change instead of once per write --
+        # an automation may write several times per second.
+        self._reported_no_http = False
         if device.model == "AC-THOR 9s":
             self._attr_native_max_value = 9000
         elif device.model == "AC ELWA 2":
@@ -57,10 +60,48 @@ class MpvPowerControl(MpvEntity, NumberEntity):
         self._attr_native_value = self.device.data[self._key]
         self.async_write_ha_state()
 
+    def _check_http_control(self) -> None:
+        """Warn once when the device silently discards control values.
+
+        ``control.html`` values only take effect while the device is in HTTP
+        control mode; in any other control type the device answers the write
+        normally and drops the value. The control page comes back in the
+        write's own response, so this costs no extra request. A missing entry
+        means ``control.html`` has never been read successfully -- that is
+        unknown, not wrong, and must not produce a warning.
+        """
+        control_state = self.device.state_dict.get("Control State")
+        if control_state is None:
+            return
+        if control_state != "HTTP":
+            if not self._reported_no_http:
+                _LOGGER.warning(
+                    "%s discards the value written to %s: the device is in "
+                    "'%s' control, not HTTP control. Turn on the 'Enable HTTP' "
+                    "switch or set the control type in the device setup",
+                    self.device.name,
+                    self._mpv_name,
+                    control_state,
+                )
+            self._reported_no_http = True
+            return
+        self._reported_no_http = False
+
     async def async_set_native_value(self, value: float) -> None:
-        """Set the new value."""
-        self._attr_native_value = value
-        await self.comm.set_power(self.device, int(value))
+        """Set the new value.
+
+        The shown value is only adopted once the device has taken the write,
+        so a failed command leaves the entity on the last value the device
+        actually received instead of claiming one it never saw.
+        """
+        # Show the integer the device was given, so the value does not change
+        # shape ("2500.0" -> "2500") at the next poll.
+        power = int(value)
+        if not await self.comm.set_power(self.device, power):
+            return
+        self._attr_native_value = power
+        self.async_write_ha_state()
+        self._check_http_control()
 
 
 class MpvPidPowerControl(MpvPowerControl):
@@ -89,16 +130,23 @@ class MpvPidPowerControl(MpvPowerControl):
         self.async_write_ha_state()
 
     async def async_set_native_value(self, value: float) -> None:
-        """Set the new value."""
-        self._attr_native_value = value
-        self.device.pid_power = value
+        """Set the new value.
+
+        Exactly one request per call. This used to keep writing once a second
+        until the device reported HTTP control, which made a single service
+        call run unbounded -- and it could not reach its goal anyway: repeating
+        a ``control.html`` write never changes the control type, only a setup
+        write does (the 'Enable HTTP' switch). Whether the device took the
+        value is reported by ``_check_http_control`` instead.
+        """
+        pid_power = int(value)
+        if not await self.comm.set_pid_power(self.device, pid_power):
+            return
+        self._attr_native_value = pid_power
+        self.device.pid_power = pid_power
         self.device.pid_power_set = 1
-        http_control_mode = self.device.state_dict["Control State"] == "HTTP"
-        while not http_control_mode:
-            await self.comm.set_pid_power(self.device, int(value))
-            await asyncio.sleep(1)
-            http_control_mode = self.device.state_dict["Control State"] == "HTTP"
-        await self.comm.set_pid_power(self.device, int(value))
+        self.async_write_ha_state()
+        self._check_http_control()
 
 
 class MpvSetupControl(MpvEntity, NumberEntity):

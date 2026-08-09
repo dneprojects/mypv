@@ -4,6 +4,78 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.7.4
+
+Comes out of issue #54, where the reporter feeds his own grid measurement to
+`control.html?pid_power=` from a REST command at 1 Hz rather than through the
+integration. Asked why, he pointed at issue #25: he had tried the entity and it
+"simply didn't work". Both reasons are in `number.py` and both are still there.
+
+### Bug fixes
+- **`KeyError: 'Control State'` in `MpvPidPowerControl.async_set_native_value`**
+  -- the traceback from #25, verbatim. `device.state_dict` is filled by
+  `get_state_dict()` from a `control.html` body, so the key does not exist until
+  that endpoint has been read successfully once. Now `.get()`, and a missing key
+  is treated as *unknown*, not as *not in HTTP control*: only a key that is
+  present and not `"HTTP"` is evidence of anything.
+- **The unbounded retry loop is gone.** The old code polled the control state and
+  looped `set_pid_power()` + `asyncio.sleep(1)` until it read `"HTTP"`, so a
+  single `number.set_value` could run for the lifetime of the entry. An
+  automation writing at a fixed interval hits this in one of two ways: in mode
+  `single` every subsequent run is skipped (the "didn't work" of #25), in
+  `queued`/`parallel` the loops stack, each adding a request per second. The
+  loop also could not reach its own goal -- the control type is a `setup.jsn`
+  value (`ctrl`, exposed as the "Enable HTTP" switch), and no number of
+  `control.html` writes changes it. One request per call now.
+
+### Behaviour
+- **`_check_http_control()` in `MpvPowerControl`, used by both controls.** A
+  device outside HTTP control answers a `control.html` write normally and
+  discards the value; nothing distinguished that from a working write. The
+  control page arrives in the write's own response and `get_state_dict()` parses
+  it there, so the check costs no request. `_reported_no_http` limits it to one
+  warning per mode change -- at 1 Hz, per-write logging would be its own defect.
+  The plain `power` control never had the `KeyError` or the loop, because it
+  never looked at the control state at all, but it discards values just as
+  silently, so it gets the same report.
+- **The optimistic value is only adopted once the write succeeded.**
+  `set_power()` / `set_pid_power()` return `False` on a communication error and
+  neither return was checked, so a failed write still left the requested value
+  on the entity. For `power` the next poll corrected it from `data.jsn`; for
+  `pid_power` nothing ever did -- the device echoes the PID *input* nowhere (the
+  `Power=` line of the control page is the output power), so that entity is
+  necessarily optimistic and a failed write would have shown a value the device
+  never saw until the next successful one.
+- **`async_write_ha_state()` after a successful write.** `MpvEntity` is a
+  `CoordinatorEntity`, hence `should_poll` is `False`, and
+  `helpers/service.py:829` only re-reads state for polling entities. Both
+  controls assigned `_attr_native_value` without publishing it, so a written
+  value stayed invisible until the next coordinator update (up to 10 s).
+- **The integer that was sent is the value shown.** Both writes send
+  `int(value)` while the entity kept the float, so the state read `2500.0` after
+  a write and `2500` after the next poll.
+
+### Tests
+`test_pid_power_set_value` passed throughout, because the fake device serves
+`Control State=HTTP` -- neither crash path was reachable from the suite. Added in
+`test_actions.py`: a control page without a `Control State` line (exactly one
+request, no exception), a device in `Modbus` control (one request rather than an
+endless series, warning once and not on the second write), immediate publication
+of the written value, and a failed write leaving the previous value in place.
+
+### Not changed
+- `device.pid_power` / `pid_power_set` are read nowhere outside
+  `MpvPidPowerControl`, and the counter only delays the reset-to-zero by two
+  cycles. Cleanup, not a fix; left for its own commit.
+- `MpvSetupControl` / `MpvToutControl` share the optimistic-value question, but
+  they write `setup.jsn` and trigger `request_setup_refresh()`, so the next poll
+  corrects them within ~10 s.
+- A failed write still does not raise. `HomeAssistantError` would make it
+  visible to automations, but on the reporter's device -- refused connections at
+  1 Hz -- it would turn a silently-continuing automation into a failing one, and
+  `test_number_set_value_handles_command_error` pins the current contract. That
+  is a deliberate behaviour change, not a bug fix.
+
 ## v1.7.3
 
 Follow-up on issue #54: 1.7.2 made the cause visible, and it was not the one

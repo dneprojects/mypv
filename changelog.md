@@ -3,6 +3,12 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.7.4
+- Fixed the "PID Power" control being unusable on devices whose control state had not been read yet: setting it failed with `KeyError: 'Control State'` and the automation stopped there.
+- Setting "PID Power" now sends exactly one value per call. It used to keep writing once a second until the device confirmed HTTP control, which made a single call run without end -- an automation writing at a fixed interval was either skipped every run or piled up writers. Repeating the write could never switch the control type anyway; only the "Enable HTTP" switch does that.
+- Both power controls now say so when the device is not in HTTP control mode. Such a device answers the write normally and discards the value, which looked like the control simply had no effect. The warning is logged once per mode change, not once per write.
+- A power value that could not be delivered is no longer shown as if it had been. The control keeps the value the device actually received, and a written value now appears immediately instead of at the next poll.
+
 ## v1.7.3
 - Fixed the entities staying unavailable on devices that refuse plain HTTP: the integration followed the encryption mode the device reported and sent two of its requests unencrypted, which such a device rejects every time. It now notices the refusal, switches those requests to HTTPS and keeps them there, instead of failing until the entry is reloaded.
 - Connection errors now name the address and the encryption mode they were sent with, so a report shows straight away when the two do not match.
