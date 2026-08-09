@@ -11,6 +11,27 @@ Comes out of issue #54, where the reporter feeds his own grid measurement to
 integration. Asked why, he pointed at issue #25: he had tried the entity and it
 "simply didn't work". Both reasons are in `number.py` and both are still there.
 
+### What `pid_power` actually is
+Measured, not deduced: writing `control.html?pid_power=1234` makes the device
+report a **surplus of 1234**. So the value is neither a setpoint nor the "upper
+power bound" `README.md` and `info.md` claimed -- it is a *measurement* of the
+power at the grid connection point that the device adopts as its surplus and
+regulates on. Everything else lines up with that: the reporter in #54 sends a
+signed value (`-sensor.vz_power`) and the device accepts both signs, the entity's
+range is ±8388607 rather than 0..9000, and `setup.jsn` carries `ptarget`/
+`ptarget2` -- a target power *at the grid*, which presupposes a grid
+measurement. Its purpose is a meter myPV does not support natively: Home
+Assistant reads it and passes it on, and the control loop stays on the device.
+Both docs corrected accordingly.
+
+Open: that single write produced an output power of ~1 W. Consistent with a
+controller that ramps and with the control value timeout (`tout`) dropping the
+value again, but unverified -- it needs repeated writes over a minute or so with
+`power_act` watched. The name is wrong either way, which is why the doc fix did
+not wait for the answer. `PID Power` is still misleading as an entity name; a
+rename changes the friendly name for everyone but the entity id only for new
+installs, so old and new installations would diverge -- deliberately deferred.
+
 ### Bug fixes
 - **`KeyError: 'Control State'` in `MpvPidPowerControl.async_set_native_value`**
   -- the traceback from #25, verbatim. `device.state_dict` is filled by
