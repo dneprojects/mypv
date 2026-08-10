@@ -24,11 +24,36 @@ measurement. Its purpose is a meter myPV does not support natively: Home
 Assistant reads it and passes it on, and the control loop stays on the device.
 Both docs corrected accordingly.
 
-Open: that single write produced an output power of ~1 W. Consistent with a
-controller that ramps and with the control value timeout (`tout`) dropping the
-value again, but unverified -- it needs repeated writes over a minute or so with
-`power_act` watched. The name is wrong either way, which is why the doc fix did
-not wait for the answer. `PID Power` is still misleading as an entity name; a
+The single write that produced only ~1 W of output was the very start of the
+rise. Measured afterwards on an AC ELWA 2 (`sec_level` 2, `ptarget` -50,
+`tout` 60) with the `--pid` / `--simulate` modes added to `dev_probe.py`:
+
+- **Open loop, constant value: the output runs away.** A constant 500 W surplus
+  drove the output from 0 to the device maximum (3516 W against 3500 W nominal)
+  and kept it there; 250 W reached the same maximum within 2 s. Nothing in the
+  fed value bounds the output -- the error never disappears, so the controller
+  integrates without limit. This is the trap for anyone who reads the control as
+  a setpoint and parks a fixed number in it.
+- **Closed loop: it settles.** Writing `available - output` every 2 s, which is
+  what a meter would report, parks the device at 723 W for 800 W of simulated
+  surplus and at 265 W for 300 W, reached in about five write cycles.
+- **The step response is derivative-dominated.** A step to 300 W drove the
+  output to 733 W for exactly one cycle and back to 265 W in the next, well
+  below saturation, where a proportional term of that gain would have held the
+  level for as long as the error stood.
+- **The residual is the setpoint, not an unintegrated error.** With
+  `ptarget` -50 the loop parks at ~77 W of reported surplus, with `ptarget` -500
+  at ~531 W, flat within ±2 W over three minutes. The device regulates the grid
+  power to `ptarget` and leaves that much of the surplus unused. The offset is
+  not constant across operating points, though: at 300 W fed it was 35 W rather
+  than 77 W.
+
+Together this also answers the write-rate question that runs through #54: the
+device reacts within one write interval and corrects a step in the cycle after
+it is reported, so the write interval *is* the reaction time. `README.md` and
+`info.md` now carry the user-facing half of this.
+
+`PID Power` is still misleading as an entity name; a
 rename changes the friendly name for everyone but the entity id only for new
 installs, so old and new installations would diverge -- deliberately deferred.
 
