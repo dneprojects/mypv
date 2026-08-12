@@ -41,6 +41,11 @@ SCAN_INTERVAL = timedelta(seconds=10)
 # Errors that mean "device temporarily unreachable" (as opposed to an auth
 # failure, which must trigger re-authentication instead of a retry).
 _COMM_ERRORS = (TimeoutError, aiohttp.ClientError, MyPVConnectionError)
+# The two writable endpoints. Which of them a write goes to decides how it is
+# sent and what happens to the answer -- see ``_write``.
+_SETUP_PATH = "/setup.jsn"
+_CONTROL_PATH = "/control.html"
+_DATA_PATH = "/data.jsn"
 # Consecutive ``control.html`` failures tolerated at the full poll rate before
 # the read backs off to every _CONTROL_RETRY_CYCLES polls (~5 min at 10 s).
 _CONTROL_FAILURES_BEFORE_BACKOFF = 3
@@ -237,7 +242,7 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
 
     async def data_update(self, device: MpyDevice) -> dict[str, Any]:
         """Update device data info."""
-        return await self._connection(device).get_json("/data.jsn")
+        return await self._connection(device).get_json(_DATA_PATH)
 
     async def setup_update(self, device: MpyDevice) -> dict[str, Any]:
         """Update device setup info and refresh the connection's encryption mode.
@@ -247,7 +252,7 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
         endpoints (``data.jsn`` / ``control.html``) at runtime.
         """
         connection = self._connection(device)
-        setup = await connection.get_json("/setup.jsn")
+        setup = await connection.get_json(_SETUP_PATH)
         connection.set_sec_level(setup.get("sec_level"))
         device.setup_skip = _SETUP_REFRESH_CYCLES
         return setup
@@ -277,7 +282,7 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
             device.control_skip -= 1
             return False
         try:
-            response_text = await self._connection(device).get_text("/control.html")
+            response_text = await self._connection(device).get_text(_CONTROL_PATH)
             self.get_state_dict(response_text, device)
         except _COMM_ERRORS as err_msg:
             device.control_failures += 1
@@ -305,105 +310,65 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
         assert self.config_entry is not None
         self.config_entry.async_start_reauth(self.hass)
 
-    async def set_number(self, device: MpyDevice, key: str, act_val: int) -> bool:
-        """Set a setup value."""
+    async def _write(
+        self, device: MpyDevice, label: str, path: str, params: dict[str, Any]
+    ) -> bool:
+        """Write to the device, reporting a failure as ``False``.
+
+        The endpoint decides the rest, because the two differ in kind rather
+        than in detail. ``/setup.jsn`` is configuration: it answers with the
+        whole setup as JSON, so the only thing left to do is to re-read it
+        sooner than the throttle would, and confirm the user's change on the
+        next poll. ``/control.html`` is real-time control: it answers with the
+        ``key=value`` status block that ``_check_http_control`` reads, so that
+        one is parsed into ``state_dict``.
+        """
+        is_setup = path == _SETUP_PATH
+        connection = self._connection(device)
         try:
-            response_text = await self._connection(device).send(
-                "/setup.jsn", {key: act_val}
-            )
-            self.get_state_dict(response_text, device)
+            if is_setup:
+                await connection.send(path, params)
+            else:
+                self.get_state_dict(await connection.command(path, params), device)
         except MyPVAuthenticationError as err:
             self._start_reauth(err)
             return False
         except _COMM_ERRORS as err_msg:
             self.logger.warning(
-                "Error during set value command: %s", describe_error(err_msg)
+                "Error during %s command: %s", label, describe_error(err_msg)
             )
             return False
-        self.request_setup_refresh(device)
+        if is_setup:
+            self.request_setup_refresh(device)
         return True
+
+    async def set_number(self, device: MpyDevice, key: str, act_val: int) -> bool:
+        """Set a setup value."""
+        return await self._write(device, "set value", _SETUP_PATH, {key: act_val})
 
     async def set_power(self, device: MpyDevice, act_pow: int) -> bool:
         """Set heater power."""
-        try:
-            response_text = await self._connection(device).command(
-                "/control.html", {"power": act_pow}
-            )
-            self.get_state_dict(response_text, device)
-        except MyPVAuthenticationError as err:
-            self._start_reauth(err)
-            return False
-        except _COMM_ERRORS as err_msg:
-            self.logger.warning(
-                "Error during set power command: %s", describe_error(err_msg)
-            )
-            return False
-        return True
+        return await self._write(device, "set power", _CONTROL_PATH, {"power": act_pow})
 
     async def set_control_mode(self, device: MpyDevice, act_mode: int) -> bool:
         """Set power control mode, e.g. html."""
-        try:
-            await self._connection(device).send("/setup.jsn", {"ctrl": act_mode})
-        except MyPVAuthenticationError as err:
-            self._start_reauth(err)
-            return False
-        except _COMM_ERRORS as err_msg:
-            self.logger.warning(
-                "Error during set control mode command: %s", describe_error(err_msg)
-            )
-            return False
-        self.request_setup_refresh(device)
-        return True
+        return await self._write(
+            device, "set control mode", _SETUP_PATH, {"ctrl": act_mode}
+        )
 
     async def set_pid_power(self, device: MpyDevice, act_pow: int) -> bool:
         """Set heater power with local pid control."""
-        try:
-            response_text = await self._connection(device).command(
-                "/control.html", {"pid_power": act_pow}
-            )
-            self.get_state_dict(response_text, device)
-        except MyPVAuthenticationError as err:
-            self._start_reauth(err)
-            return False
-        except _COMM_ERRORS as err_msg:
-            self.logger.warning(
-                "Error during set pid power command: %s", describe_error(err_msg)
-            )
-            return False
-        return True
+        return await self._write(
+            device, "set pid power", _CONTROL_PATH, {"pid_power": act_pow}
+        )
 
     async def switch(self, device: MpyDevice, key: str, state: bool) -> bool:
         """Set a setup switch."""
-        try:
-            response_text = await self._connection(device).send(
-                "/setup.jsn", {key: int(state)}
-            )
-            self.get_state_dict(response_text, device)
-        except MyPVAuthenticationError as err:
-            self._start_reauth(err)
-            return False
-        except _COMM_ERRORS as err_msg:
-            self.logger.warning(
-                "Error during switch command: %s", describe_error(err_msg)
-            )
-            return False
-        self.request_setup_refresh(device)
-        return True
+        return await self._write(device, "switch", _SETUP_PATH, {key: int(state)})
 
     async def activate_boost(self, device: MpyDevice, mode: int = 1) -> bool:
         """Activate or deactivate boost mode."""
-        try:
-            await self._connection(device).send("/setup.jsn", {"bststrt": mode})
-        except MyPVAuthenticationError as err:
-            self._start_reauth(err)
-            return False
-        except _COMM_ERRORS as err_msg:
-            self.logger.warning(
-                "Error during boost command: %s", describe_error(err_msg)
-            )
-            return False
-        self.request_setup_refresh(device)
-        return True
+        return await self._write(device, "boost", _SETUP_PATH, {"bststrt": mode})
 
     async def firmware_command(self, device: MpyDevice, command: str) -> bool:
         """Trigger a firmware download or installation.
@@ -412,17 +377,7 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
         ordinary setup writes; both only exist from control unit firmware
         a0020000 onwards (see ``update.py``).
         """
-        try:
-            await self._connection(device).send("/setup.jsn", {command: 1})
-        except MyPVAuthenticationError as err:
-            self._start_reauth(err)
-            return False
-        except _COMM_ERRORS as err_msg:
-            self.logger.warning(
-                "Error during %s command: %s", command, describe_error(err_msg)
-            )
-            return False
-        return True
+        return await self._write(device, command, _SETUP_PATH, {command: 1})
 
     def get_state_dict(self, text: str, device: MpyDevice) -> None:
         """Convert lines to state dict."""

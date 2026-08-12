@@ -11,19 +11,14 @@ from homeassistant.components.number import NumberEntity
 from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.switch import SwitchEntity
+from homeassistant.const import UnitOfTime
 from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
 from .binary_sensor import MpvBin1Sensor, MpvBin2Sensor, MpvBin3Sensor, MpvBinSensor
 from .button import MpvBoostButton, MpvBoostOffButton
 from .const import DOMAIN, SENSOR_TYPES, SETUP_TYPES, MpvDescription
-from .number import (
-    MpvGridTargetControl,
-    MpvPidPowerControl,
-    MpvPowerControl,
-    MpvSetupControl,
-    MpvToutControl,
-)
+from .number import MpvPidPowerControl, MpvPowerControl, MpvSetupControl
 from .select import MpvCtrlTypeSelect
 from .sensor import (
     MpvDevStatSensor,
@@ -175,7 +170,6 @@ class MpyDevice:
             "enc_stat": (self.sensors, MpvEncSensor),
             "switch": (self.switches, MpvSetupSwitch),
             "number": (self.controls, MpvSetupControl),
-            "grid_target": (self.controls, MpvGridTargetControl),
         }
 
         for key, desc in SENSOR_TYPES.items():
@@ -206,7 +200,18 @@ class MpyDevice:
 
         if self.model != "Solthor":
             self.switches.append(MpvHttpSwitch(self, "ctrl"))
-            self.controls.append(MpvToutControl(self, "tout"))
+            # Unlike the table-driven settings this one is created whether or
+            # not the device reports it: some models only send ``tout`` once it
+            # has been written, and the entity has to exist to write it.
+            self.controls.append(
+                MpvSetupControl(
+                    self,
+                    "tout",
+                    MpvDescription(
+                        "Control Value Timeout", UnitOfTime.SECONDS, "number"
+                    ),
+                )
+            )
 
     def _add_binary_sensor(self, key: str, desc: MpvDescription) -> None:
         """Add the relay entities, which an AC-THOR 9s splits into its outputs."""

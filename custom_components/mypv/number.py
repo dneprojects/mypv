@@ -1,7 +1,7 @@
 """Numbers of myPV integration."""
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from homeassistant.components.number import NumberDeviceClass, NumberEntity
 from homeassistant.config_entries import ConfigEntry
@@ -149,61 +149,80 @@ class MpvPidPowerControl(MpvPowerControl):
         self._check_http_control()
 
 
-class MpvSetupControl(MpvEntity, NumberEntity):
-    """Representation of myPV setup value control."""
+class MpvSetupNumber(NamedTuple):
+    """How one writable ``setup.jsn`` value is presented and scaled.
 
-    _attr_device_class = NumberDeviceClass.TEMPERATURE
-    _attr_native_min_value = 40
-    _attr_native_max_value = 80
-    _attr_native_step = 1
-    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
-
-    def __init__(self, device: MpyDevice, key: str, info: MpvDescription) -> None:
-        """Initialize the control."""
-        super().__init__(device, info.name)
-        self._key = key
-        self._type = info.kind
-
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        self._attr_native_value = self.device.setup[self._key] / 10
-        self.async_write_ha_state()
-
-    async def async_set_native_value(self, value: float) -> None:
-        """Set the new value."""
-        self._attr_native_value = value
-        await self.comm.set_number(self.device, self._key, int(value * 10))
-
-
-class MpvGridTargetControl(MpvEntity, NumberEntity):
-    """Representation of the target power at the grid connection point.
-
-    ``ptarget`` is the setpoint the device's own controller regulates the grid
-    power to, so it is what decides how much of the surplus is left unused: on
-    an AC ELWA 2, ``ptarget`` -50 parked the reported surplus at ~77 W and
-    -500 at ~531 W. Negative means feed-in, positive means drawn from the grid.
-
-    Unlike the temperature setup values this is written unscaled -- the device
-    reports and takes plain watts.
+    scale: device units per displayed unit. The temperatures are stored in
+    tenths of a degree, everything else is stored as it is shown.
     """
 
-    _attr_device_class = NumberDeviceClass.POWER
-    _attr_native_min_value = -1000
-    _attr_native_max_value = 1000
-    _attr_native_step = 10
-    _attr_native_unit_of_measurement = UnitOfPower.WATT
+    device_class: NumberDeviceClass
+    unit: str
+    min_value: float
+    max_value: float
+    step: float
+    scale: int = 1
+
+
+SETUP_NUMBERS: dict[str, MpvSetupNumber] = {
+    "ww1target": MpvSetupNumber(
+        NumberDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, 40, 80, 1, scale=10
+    ),
+    "ww1boost": MpvSetupNumber(
+        NumberDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, 40, 80, 1, scale=10
+    ),
+    # ``ptarget`` is the setpoint the device's own controller regulates the grid
+    # power to, so it decides how much of the surplus is left unused: on an AC
+    # ELWA 2, -50 parked the reported surplus at ~77 W and -500 at ~531 W.
+    # Negative means feed-in, positive means drawn from the grid.
+    "ptarget": MpvSetupNumber(
+        NumberDeviceClass.POWER, UnitOfPower.WATT, -1000, 1000, 10
+    ),
+    "tout": MpvSetupNumber(NumberDeviceClass.DURATION, UnitOfTime.SECONDS, 10, 180, 10),
+}
+
+
+class MpvSetupControl(MpvEntity, NumberEntity):
+    """Representation of a writable ``setup.jsn`` value.
+
+    Everything that differs between these settings -- bounds, step, unit and
+    whether the device stores tenths -- comes from ``SETUP_NUMBERS``, so a new
+    one is a table entry rather than a class.
+    """
 
     def __init__(self, device: MpyDevice, key: str, info: MpvDescription) -> None:
         """Initialize the control."""
         super().__init__(device, info.name)
         self._key = key
-        self._type = info.kind
+        spec = SETUP_NUMBERS[key]
+        self._scale = spec.scale
+        self._attr_device_class = spec.device_class
+        self._attr_native_unit_of_measurement = spec.unit
+        self._attr_native_min_value = spec.min_value
+        self._attr_native_max_value = spec.max_value
+        self._attr_native_step = spec.step
+
+    def _displayed(self, stored: float) -> float:
+        """Convert a value as the device stores it to the one shown.
+
+        Both the poll and a write go through this, so a written value cannot
+        change shape ("50" -> "50.0") at the next poll.
+        """
+        return stored / self._scale if self._scale != 1 else stored
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        self._attr_native_value = self.device.setup[self._key]
+        try:
+            stored = self.device.setup[self._key]
+        except KeyError, TypeError:
+            # Not every model reports every setting -- the control value timeout
+            # is created for each non-Solthor device but not sent by all of
+            # them. Without this the very first update raises while the entity
+            # is being added, so it never appears at all.
+            _LOGGER.debug("%s does not report %s", self.device.name, self._key)
+            return
+        self._attr_native_value = self._displayed(stored)
         self.async_write_ha_state()
 
     async def async_set_native_value(self, value: float) -> None:
@@ -211,44 +230,10 @@ class MpvGridTargetControl(MpvEntity, NumberEntity):
 
         The shown value is only adopted once the device has taken the write, so
         a failed command leaves the entity on the last value the device
-        actually received.
+        actually received instead of claiming one it never saw.
         """
-        target = int(value)
-        if not await self.comm.set_number(self.device, self._key, target):
+        stored = int(value * self._scale)
+        if not await self.comm.set_number(self.device, self._key, stored):
             return
-        self._attr_native_value = target
+        self._attr_native_value = self._displayed(stored)
         self.async_write_ha_state()
-
-
-class MpvToutControl(MpvEntity, NumberEntity):
-    """Representation of the control value timeout setting."""
-
-    _attr_device_class = NumberDeviceClass.DURATION
-    _attr_native_min_value = 10
-    _attr_native_max_value = 180
-    _attr_native_step = 10
-    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
-
-    def __init__(self, device: MpyDevice, key: str) -> None:
-        """Initialize the control."""
-        super().__init__(device, "Control Value Timeout")
-        self._key = key
-
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        try:
-            self._attr_native_value = self.device.setup[self._key]
-        except KeyError, TypeError:
-            # The entity is created for every non-Solthor device, but not every
-            # model reports a control value timeout. Without this the very
-            # first update raises while the entity is being added, so it never
-            # appears at all.
-            _LOGGER.debug("%s does not report %s", self.device.name, self._key)
-            return
-        self.async_write_ha_state()
-
-    async def async_set_native_value(self, value: float) -> None:
-        """Set the new value."""
-        self._attr_native_value = value
-        await self.comm.set_number(self.device, self._key, int(value))

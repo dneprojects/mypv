@@ -127,7 +127,7 @@ def test_create_connection_picks_transport_by_password() -> None:
 
 def test_encode_form_matches_encodeuricomponent() -> None:
     """The password is encoded like the browser: !*'() stay literal, / and space do not."""
-    assert _encode_form({"pw": "s-Qi2t!qdCXCZ7-"}) == "pw=s-Qi2t!qdCXCZ7-"
+    assert _encode_form({"pw": "d-Um0y!wxKLMNP4-"}) == "pw=d-Um0y!wxKLMNP4-"
     assert _encode_form({"pw": "a*b'(c)~"}) == "pw=a*b'(c)~"
     assert _encode_form({"x": "a b/c&d"}) == "x=a%20b%2Fc%26d"
 
@@ -135,19 +135,19 @@ def test_encode_form_matches_encodeuricomponent() -> None:
 async def test_https_send_posts_password_browser_encoded() -> None:
     """A HTTPS write POSTs the params plus the literal-encoded password."""
     session = _FakeSession(lambda: _FakeResponse(body="{}"))
-    conn = _https_connection(session, "s-Qi2t!qdCXCZ7-")
+    conn = _https_connection(session, "d-Um0y!wxKLMNP4-")
 
     await conn.send("/setup.jsn", {"ww1target": 555})
 
     assert session.posts[0]["url"] == "https://1.2.3.4/setup.jsn"
     # The '!' must stay literal (not %21) or the device rejects the password.
-    assert session.posts[0]["data"] == "ww1target=555&pw=s-Qi2t!qdCXCZ7-"
+    assert session.posts[0]["data"] == "ww1target=555&pw=d-Um0y!wxKLMNP4-"
 
 
 async def test_https_command_gets_control_html_without_password() -> None:
     """Power steering GETs control.html; the password never lands in the URL."""
     session = _FakeSession(lambda: _FakeResponse(body="OK"))
-    conn = _https_connection(session, "s-Qi2t!qdCXCZ7-")
+    conn = _https_connection(session, "d-Um0y!wxKLMNP4-")
 
     await conn.command("/control.html", {"power": 1500})
 

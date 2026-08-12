@@ -24,6 +24,51 @@ a kilowatt has no purpose: it only parks that much of the surplus unused (or
 draws that much continuously), and the device's own regulation happens well
 inside that band. `ptarget2` is still unmapped.
 
+### One write path instead of seven
+`set_number`, `set_power`, `set_control_mode`, `set_pid_power`, `switch`,
+`activate_boost` and `firmware_command` were ~120 lines of the same
+`try / except MyPVAuthenticationError -> _start_reauth / except _COMM_ERRORS ->
+warn / return True`, copied seven times. They are now one-line callers of
+`_write(device, label, path, params)`.
+
+The endpoint decides the rest, and that is not a simplification imposed on the
+code -- it is what all seven were already doing. `/setup.jsn` writes get
+`send()` (password-carrying POST) and a `request_setup_refresh()`;
+`/control.html` writes get `command()` and have their answer parsed into
+`state_dict` for `_check_http_control`. Every previous method matched that split
+except for one detail, which turned out to be dead code -- see below.
+
+### `get_state_dict` after a `setup.jsn` write was dead
+`set_number` and `switch` parsed the write's response into `state_dict`;
+`set_control_mode`, `activate_boost` and `firmware_command` did not. Checked
+against the hardware (AC ELWA 2, `sec_level` 2, firmware e0002500): a
+`POST /setup.jsn` answers `Content-Type: application/json` with the entire
+setup, 4773 bytes over 244 lines, and not one `=` in the body.
+`get_state_dict` looks for `key=value` lines, so it extracted exactly zero
+entries -- verified by running it over the captured response. Only
+`control.html` returns that status block. The call is gone from the setup path.
+
+Not purely cosmetic: the parser splits *any* line containing `=`, so a setting
+whose value happens to carry one (an SSID, say) would have injected a junk key
+into `state_dict`, which is what `_check_http_control` reads.
+
+### One number class instead of three
+`MpvSetupControl`, `MpvToutControl` and `MpvGridTargetControl` differed only in
+bounds, step, unit and whether the device stores tenths -- but each carried its
+own `_handle_coordinator_update` and `async_set_native_value`, and they had
+drifted: only the timeout survived a missing key, only the grid target checked
+whether the write arrived before adopting the value. They are now one
+`MpvSetupControl` driven by `SETUP_NUMBERS`, so both behaviours apply to all
+four settings, and `ptarget` no longer needs a `grid_target` kind of its own.
+
+`_displayed()` converts stored -> shown for the poll and the write alike, so a
+written value cannot change shape (`"50"` -> `"50.0"`) at the next poll -- the
+wart `MpvPowerControl` documents.
+
+`tout` keeps being created for every non-Solthor device whether or not the
+device reports it (some only send it once written), so it is built directly
+rather than through the `SETUP_TYPES` loop.
+
 ### `init_entities` dispatches through a table
 Adding `grid_target` made the `if/elif desc.kind == ...` chains in
 `MpyDevice.init_entities` the sixteenth branch and took its McCabe complexity to
