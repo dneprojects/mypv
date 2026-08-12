@@ -4,6 +4,48 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.7.5
+
+### `ptarget` as a number entity
+The setpoint measured in v1.7.4 is now settable: `MpvGridTargetControl` in
+`number.py`, wired through `SETUP_TYPES["ptarget"]` with its own `grid_target`
+kind so it does not inherit `MpvSetupControl`'s tenths scaling -- `setup.jsn`
+carries `ptarget` in plain watts (`ptarget` -50 parked an AC ELWA 2 at ~77 W of
+reported surplus, -500 at ~531 W). Written via `set_number`, and like the power
+controls it only adopts the value once the device has taken the write.
+
+The entity exists only where `setup.jsn` actually carries the key, which the
+`SETUP_TYPES` loop already handles -- the Solthor fixture has no `ptarget` and
+gets no entity, which the translation-coverage test walks.
+
+Range is `-1000..1000` W, step 10 -- the useful envelope rather than the
+writable one, which `setup.jsn` does not expose. A target further from zero than
+a kilowatt has no purpose: it only parks that much of the surplus unused (or
+draws that much continuously), and the device's own regulation happens well
+inside that band. `ptarget2` is still unmapped.
+
+### `init_entities` dispatches through a table
+Adding `grid_target` made the `if/elif desc.kind == ...` chains in
+`MpyDevice.init_entities` the sixteenth branch and took its McCabe complexity to
+23, against a repo limit of 25. The kind is now looked up in two dicts mapping it
+to `(collection, class)` -- one for `data.jsn`, one for `setup.jsn` -- so a key
+that stands for exactly one entity is a table row rather than a branch. The three
+that stand for *several* keep real code, moved into `_add_binary_sensor` (the
+AC-THOR 9s relay split), `_add_boost_buttons` (the start/stop pair) and
+`_add_power_controls` (both controls, the reading and its three energy meters).
+The repeated "is there a usable value" test is `_reports()`.
+
+Complexity 23 -> 11. Two things fell out of the restructuring rather than being
+aimed at: the allow-list tuples of kinds are gone (the table keys *are* the
+allow-list, so a kind can no longer be listed as allowed while having no branch,
+which `"button"`/`"control"` were in the setup loop), and `data_keys` is gone
+with them (`_reports()` covers the absent case, so the list and its O(n) lookup
+per key were redundant).
+
+Verified as a refactor, not by the suite alone: the entity id, name,
+translation key and unique id of every entity were dumped for all three fixture
+models before and after, and the sets are identical.
+
 ## v1.7.4
 
 Comes out of issue #54, where the reporter feeds his own grid measurement to

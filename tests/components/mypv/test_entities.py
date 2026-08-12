@@ -43,6 +43,11 @@ async def test_control_entities(
     assert target is not None
     assert target.state == "50.0"  # ww1target 500 -> /10
 
+    # Grid target is a plain watt value, written and read back unscaled.
+    grid_target = hass.states.get(f"number.{PREFIX}_target_grid_power")
+    assert grid_target is not None
+    assert float(grid_target.state) == -50
+
     enable = hass.states.get(f"switch.{PREFIX}_enable_device")
     assert enable is not None
     assert enable.state == "on"  # devmode 1

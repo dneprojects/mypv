@@ -3,6 +3,9 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.7.5
+- New "Target Grid Power" control on devices that report it. This is the value the device's own controller regulates the grid power to, so it decides how much of the surplus is left unused -- negative means feed-in, positive means drawn from the grid. It could previously only be set at the device itself.
+
 ## v1.7.4
 - Fixed the "PID Power" control being unusable on devices whose control state had not been read yet: setting it failed with `KeyError: 'Control State'` and the automation stopped there.
 - Setting "PID Power" now sends exactly one value per call. It used to keep writing once a second until the device confirmed HTTP control, which made a single call run without end -- an automation writing at a fixed interval was either skipped every run or piled up writers. Repeating the write could never switch the control type anyway; only the "Enable HTTP" switch does that.

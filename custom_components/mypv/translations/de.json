@@ -103,6 +103,9 @@
       "power_elwa_2": {
         "name": "Leistung ELWA-2"
       },
+      "target_grid_power": {
+        "name": "Zielwert Netzleistung"
+      },
       "target_temperature": {
         "name": "Zieltemperatur"
       }

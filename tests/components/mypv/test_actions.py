@@ -38,6 +38,45 @@ async def test_number_set_value(
     assert any("ww1target=550" in url for url in mock_device.requested)
 
 
+async def test_grid_target_set_value(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    mock_device: FakeWorld,
+) -> None:
+    """Setting the grid target writes setup.jsn with the plain watt value."""
+    entity_id = f"number.{PREFIX}_target_grid_power"
+    await hass.services.async_call(
+        NUMBER_DOMAIN,
+        SERVICE_SET_VALUE,
+        {ATTR_ENTITY_ID: entity_id, ATTR_VALUE: -500},
+        blocking=True,
+    )
+    assert any("ptarget=-500" in url for url in mock_device.requested)
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert float(state.state) == -500
+
+
+async def test_grid_target_keeps_value_on_command_error(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    mock_device: FakeWorld,
+) -> None:
+    """A failed write leaves the entity on the value the device last took."""
+    entity_id = f"number.{PREFIX}_target_grid_power"
+    mock_device.spec().error = TimeoutError()
+
+    await hass.services.async_call(
+        NUMBER_DOMAIN,
+        SERVICE_SET_VALUE,
+        {ATTR_ENTITY_ID: entity_id, ATTR_VALUE: -500},
+        blocking=True,
+    )
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert float(state.state) == -50
+
+
 async def test_switch_turn_on_off(
     hass: HomeAssistant,
     setup_integration: MockConfigEntry,

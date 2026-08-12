@@ -15,6 +15,9 @@
       "control_value_timeout": {
         "default": "mdi:camera-timer"
       },
+      "target_grid_power": {
+        "default": "mdi:transmission-tower"
+      },
       "target_temperature": {
         "default": "mdi:water-thermometer"
       }

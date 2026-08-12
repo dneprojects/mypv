@@ -46,6 +46,7 @@ SETUP_JSN: Final[dict[str, Any]] = {
     "bstmode": 0,
     "ww1target": 500,
     "ww1boost": 450,
+    "ptarget": -50,
     "ctrl": 1,
 }
 
@@ -83,6 +84,7 @@ SETUP_9S: Final[dict[str, Any]] = {
     "bstmode": 1,
     "ww1target": 600,
     "ww1boost": 500,
+    "ptarget": -100,
     "ctrl": 2,
 }
 

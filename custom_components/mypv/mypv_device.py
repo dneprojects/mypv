@@ -1,5 +1,7 @@
 """myPV device model."""
 
+from collections.abc import Callable
+from datetime import tzinfo
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -15,7 +17,13 @@ from homeassistant.util import dt as dt_util
 from .binary_sensor import MpvBin1Sensor, MpvBin2Sensor, MpvBin3Sensor, MpvBinSensor
 from .button import MpvBoostButton, MpvBoostOffButton
 from .const import DOMAIN, SENSOR_TYPES, SETUP_TYPES, MpvDescription
-from .number import MpvPidPowerControl, MpvPowerControl, MpvSetupControl, MpvToutControl
+from .number import (
+    MpvGridTargetControl,
+    MpvPidPowerControl,
+    MpvPowerControl,
+    MpvSetupControl,
+    MpvToutControl,
+)
 from .select import MpvCtrlTypeSelect
 from .sensor import (
     MpvDevStatSensor,
@@ -47,6 +55,17 @@ _IGNORED_DATA_KEYS = (
     "wifi_list",
     "freq",
 )
+
+
+def _reports(values: dict[str, Any], key: str) -> bool:
+    """Return whether the device sends a usable value for this key.
+
+    A key the device does not know is absent; one it knows but has no value for
+    comes back as ``None`` or the string ``"null"``. Either way there is nothing
+    to build an entity on.
+    """
+    value = values.get(key)
+    return value is not None and value != "null"
 
 
 class MpyDevice:
@@ -120,7 +139,6 @@ class MpyDevice:
     async def init_entities(self) -> None:
         """Take sensors from data and init HA sensors."""
         tz = await dt_util.async_get_time_zone(self.comm.hass.config.time_zone)
-        data_keys = [key for key in self.data if key not in _IGNORED_DATA_KEYS]
 
         if self.model != "Solthor":
             self.sensors.append(
@@ -130,111 +148,111 @@ class MpyDevice:
                     MpvDescription("Control state", None, "sensor"),
                 )
             )
+
+        # ``kind`` -> the collection the entity joins and the class to build.
+        # Only for keys that stand for exactly one entity; the ones that stand
+        # for several are in ``bundles`` below, and a kind in neither table is
+        # not exposed at all.
+        data_entities: dict[str, tuple[list[Any], type[Any]]] = {
+            "sensor": (self.sensors, MpvSensor),
+            "text": (self.sensors, MpvSensor),
+            "ip_string": (self.sensors, MpvSensor),
+            "version": (self.sensors, MpvSensor),
+            "dev_stat": (self.sensors, MpvDevStatSensor),
+            "upd_stat": (self.sensors, MpvUpdateSensor),
+        }
+        bundles: dict[str, Callable[[str, MpvDescription], None]] = {
+            "binary_sensor": self._add_binary_sensor,
+            "button": self._add_boost_buttons,
+            "control": lambda key, desc: self._add_power_controls(key, desc, tz),
+        }
+        setup_entities: dict[str, tuple[list[Any], type[Any]]] = {
+            "sensor": (self.sensors, MpvSensor),
+            "text": (self.sensors, MpvSensor),
+            "ip_string": (self.sensors, MpvSensor),
+            "binary_sensor": (self.binary_sensors, MpvBinSensor),
+            "ctrl_type": (self.selects, MpvCtrlTypeSelect),
+            "enc_stat": (self.sensors, MpvEncSensor),
+            "switch": (self.switches, MpvSetupSwitch),
+            "number": (self.controls, MpvSetupControl),
+            "grid_target": (self.controls, MpvGridTargetControl),
+        }
+
         for key, desc in SENSOR_TYPES.items():
-            # use only keys included in data with valid values
-            if (
-                desc.kind
-                in (
-                    "binary_sensor",
-                    "sensor",
-                    "version",
-                    "ip_string",
-                    "upd_stat",
-                    "dev_stat",
-                    "button",
-                    "switch",
-                    "control",
-                    "text",
-                )
-                and key in data_keys
-                and self.data[key] is not None
-                and self.data[key] != "null"
-            ):
-                self.logger.debug("Sensor Key: %s: %s", key, self.data[key])
-                if desc.kind in ("sensor", "text", "ip_string", "version"):
-                    self.sensors.append(MpvSensor(self, key, desc))
-                elif desc.kind == "dev_stat":
-                    self.sensors.append(MpvDevStatSensor(self, key, desc))
-                elif desc.kind == "upd_stat":
-                    self.sensors.append(MpvUpdateSensor(self, key, desc))
-                elif desc.kind == "binary_sensor":
-                    if self.model == "AC-THOR 9s" and desc.name == "Relais":
-                        self.binary_sensors.append(MpvBin1Sensor(self, key, desc))
-                        self.binary_sensors.append(
-                            MpvBin2Sensor(self, key, desc._replace(name="Out 3"))
-                        )
-                        self.binary_sensors.append(
-                            MpvBin3Sensor(self, key, desc._replace(name="Out 2"))
-                        )
-                        self.sensors.append(
-                            MpvOutStatSensor(
-                                self, key, desc._replace(name="Output status")
-                            )
-                        )
-                    else:
-                        self.binary_sensors.append(MpvBinSensor(self, key, desc))
-                elif desc.kind == "button":
-                    self.buttons.append(MpvBoostButton(self, key, desc))
-                    self.buttons.append(
-                        MpvBoostOffButton(self, key + "off", SENSOR_TYPES[key + "off"])
-                    )
-                elif desc.kind == "control":
-                    self.controls.append(MpvPowerControl(self, key, desc))
-                    self.controls.append(MpvPidPowerControl(self, key, desc))
-                    # Setup as sensor, too
-                    self.sensors.append(MpvSensor(self, key, desc))  # power
-                    for prefix, energy_cls in (
-                        ("int", MpvEnergySensor),
-                        ("intm", MpvEnergyMonthlySensor),
-                        ("intd", MpvEnergyDailySensor),
-                    ):
-                        energy = energy_cls(
-                            self,
-                            f"{prefix}_{key}",
-                            SENSOR_TYPES[f"{prefix}_{key}"],
-                            desc,
-                            tz,
-                        )
-                        self.sensors.append(energy)
-                        self.energy_sensors.append(energy)
             if desc.kind == "sensor_always":
-                # Sensor value might not be available at startup
+                # Sensor value might not be available at startup, so this one is
+                # created without asking whether the device reports it yet.
                 self.sensors.append(MpvSensor(self, key, desc))
+                continue
+            # use only keys included in data with valid values
+            if key in _IGNORED_DATA_KEYS or not _reports(self.data, key):
+                continue
+            self.logger.debug("Sensor Key: %s: %s", key, self.data[key])
+            if (target := data_entities.get(desc.kind)) is not None:
+                collection, entity_cls = target
+                collection.append(entity_cls(self, key, desc))
+            elif (add_bundle := bundles.get(desc.kind)) is not None:
+                add_bundle(key, desc)
+
         for key, desc in SETUP_TYPES.items():
             # use only keys included in setup with valid values
-            if (
-                desc.kind
-                in (
-                    "binary_sensor",
-                    "button",
-                    "ctrl_type",
-                    "enc_stat",
-                    "number",
-                    "sensor",
-                    "switch",
-                    "control",
-                )
-                and key in self.setup
-                and self.setup[key] is not None
-                and self.setup[key] != "null"
-            ):
-                self.logger.debug("Setup Key: %s: %s", key, self.setup[key])
-                if desc.kind in ("sensor", "text", "ip_string"):
-                    self.sensors.append(MpvSensor(self, key, desc))
-                elif desc.kind == "ctrl_type":
-                    self.logger.debug("Creating select entity for %s", key)
-                    self.selects.append(MpvCtrlTypeSelect(self, key, desc))
-                elif desc.kind == "enc_stat":
-                    self.sensors.append(MpvEncSensor(self, key, desc))
-                elif desc.kind == "binary_sensor":
-                    self.binary_sensors.append(MpvBinSensor(self, key, desc))
-                elif desc.kind == "switch":
-                    self.switches.append(MpvSetupSwitch(self, key, desc))
-                elif desc.kind == "number":
-                    self.controls.append(MpvSetupControl(self, key, desc))
+            if not _reports(self.setup, key):
+                continue
+            if (target := setup_entities.get(desc.kind)) is None:
+                continue
+            self.logger.debug("Setup Key: %s: %s", key, self.setup[key])
+            collection, entity_cls = target
+            collection.append(entity_cls(self, key, desc))
+
         if self.model != "Solthor":
             self.switches.append(MpvHttpSwitch(self, "ctrl"))
             self.controls.append(MpvToutControl(self, "tout"))
+
+    def _add_binary_sensor(self, key: str, desc: MpvDescription) -> None:
+        """Add the relay entities, which an AC-THOR 9s splits into its outputs."""
+        if self.model != "AC-THOR 9s" or desc.name != "Relais":
+            self.binary_sensors.append(MpvBinSensor(self, key, desc))
+            return
+        self.binary_sensors.append(MpvBin1Sensor(self, key, desc))
+        self.binary_sensors.append(
+            MpvBin2Sensor(self, key, desc._replace(name="Out 3"))
+        )
+        self.binary_sensors.append(
+            MpvBin3Sensor(self, key, desc._replace(name="Out 2"))
+        )
+        self.sensors.append(
+            MpvOutStatSensor(self, key, desc._replace(name="Output status"))
+        )
+
+    def _add_boost_buttons(self, key: str, desc: MpvDescription) -> None:
+        """Add the start/stop pair a single boost key stands for."""
+        self.buttons.append(MpvBoostButton(self, key, desc))
+        self.buttons.append(
+            MpvBoostOffButton(self, key + "off", SENSOR_TYPES[key + "off"])
+        )
+
+    def _add_power_controls(
+        self, key: str, desc: MpvDescription, tz: tzinfo | None
+    ) -> None:
+        """Add both controls, the reading and the energy meters of a power key."""
+        self.controls.append(MpvPowerControl(self, key, desc))
+        self.controls.append(MpvPidPowerControl(self, key, desc))
+        # Setup as sensor, too
+        self.sensors.append(MpvSensor(self, key, desc))  # power
+        for prefix, energy_cls in (
+            ("int", MpvEnergySensor),
+            ("intm", MpvEnergyMonthlySensor),
+            ("intd", MpvEnergyDailySensor),
+        ):
+            energy = energy_cls(
+                self,
+                f"{prefix}_{key}",
+                SENSOR_TYPES[f"{prefix}_{key}"],
+                desc,
+                tz,
+            )
+            self.sensors.append(energy)
+            self.energy_sensors.append(energy)
 
     async def update(self) -> None:
         """Update all sensors."""

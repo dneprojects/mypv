@@ -109,6 +109,9 @@
       "power_elwa_2": {
         "name": "Power ELWA-2"
       },
+      "target_grid_power": {
+        "name": "Target Grid Power"
+      },
       "target_temperature": {
         "name": "Target Temperature"
       }

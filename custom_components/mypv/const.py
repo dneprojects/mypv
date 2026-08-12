@@ -224,6 +224,7 @@ SETUP_TYPES: dict[str, MpvDescription] = {
     "bstmode": MpvDescription("Enable Boost Mode", None, "switch"),
     "ww1target": MpvDescription("Target Temperature", None, "number"),
     "ww1boost": MpvDescription("Boost Min Temperature", None, "number"),
+    "ptarget": MpvDescription("Target Grid Power", UnitOfPower.WATT, "grid_target"),
     "ctrl": MpvDescription("Control type", None, "ctrl_type"),
     "sec_level": MpvDescription("Encryption", None, "enc_stat"),
 }

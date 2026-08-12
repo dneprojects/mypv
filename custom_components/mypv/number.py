@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from homeassistant.components.number import NumberDeviceClass, NumberEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTemperature, UnitOfTime
+from homeassistant.const import UnitOfPower, UnitOfTemperature, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import slugify
@@ -174,6 +174,50 @@ class MpvSetupControl(MpvEntity, NumberEntity):
         """Set the new value."""
         self._attr_native_value = value
         await self.comm.set_number(self.device, self._key, int(value * 10))
+
+
+class MpvGridTargetControl(MpvEntity, NumberEntity):
+    """Representation of the target power at the grid connection point.
+
+    ``ptarget`` is the setpoint the device's own controller regulates the grid
+    power to, so it is what decides how much of the surplus is left unused: on
+    an AC ELWA 2, ``ptarget`` -50 parked the reported surplus at ~77 W and
+    -500 at ~531 W. Negative means feed-in, positive means drawn from the grid.
+
+    Unlike the temperature setup values this is written unscaled -- the device
+    reports and takes plain watts.
+    """
+
+    _attr_device_class = NumberDeviceClass.POWER
+    _attr_native_min_value = -1000
+    _attr_native_max_value = 1000
+    _attr_native_step = 10
+    _attr_native_unit_of_measurement = UnitOfPower.WATT
+
+    def __init__(self, device: MpyDevice, key: str, info: MpvDescription) -> None:
+        """Initialize the control."""
+        super().__init__(device, info.name)
+        self._key = key
+        self._type = info.kind
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self._attr_native_value = self.device.setup[self._key]
+        self.async_write_ha_state()
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Set the new value.
+
+        The shown value is only adopted once the device has taken the write, so
+        a failed command leaves the entity on the last value the device
+        actually received.
+        """
+        target = int(value)
+        if not await self.comm.set_number(self.device, self._key, target):
+            return
+        self._attr_native_value = target
+        self.async_write_ha_state()
 
 
 class MpvToutControl(MpvEntity, NumberEntity):
