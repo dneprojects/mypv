@@ -52,6 +52,34 @@ Not purely cosmetic: the parser splits *any* line containing `=`, so a setting
 whose value happens to carry one (an SSID, say) would have injected a junk key
 into `state_dict`, which is what `_check_http_control` reads.
 
+### `setup.jsn` writes are not authenticated (AC ELWA 2, e0002500)
+Found while checking the above, and the reason the dead call went unnoticed:
+`POST /setup.jsn` is accepted **and applied** with a wrong password, and with no
+`pw` field at all -- on a device in `sec_level` 2, the mode whose whole point is
+that the config is password-protected.
+
+Measured with every Home Assistant instance on the network shut down, so no
+session of another client could have been carrying the write: `tout` was moved
+60 -> 61 with no credentials, read back as 61, and restored to 60. All 243 setup
+keys verified back at their original values afterwards.
+
+Repeated three times -- right after the instances were disabled, later, and
+again after 25 minutes without a single login attempt from anyone -- because a
+time-limited session opened by another client's successful login would explain
+the first result just as well. It went through every time; no device holds a
+login open for half an hour of silence. The answer to an
+unauthenticated write is byte-identical to an authenticated one (HTTP 200, the
+whole setup as JSON), which is why "the device took it" and "the device ignored
+it" cannot be told apart from the response -- only a read-back distinguishes
+them.
+
+`/auth.jsn` is the only endpoint that checks the password. It is what the web UI
+logs in with, and it rejects a wrong one (`{"auth":0,"wait":2}`).
+
+**Do not take this as licence to stop sending the password on writes.** It is one
+model on one firmware; other devices or later firmware may well enforce it, and
+a write that silently stops working would be far worse than a redundant field.
+
 ### One number class instead of three
 `MpvSetupControl`, `MpvToutControl` and `MpvGridTargetControl` differed only in
 bounds, step, unit and whether the device stores tenths -- but each carried its
