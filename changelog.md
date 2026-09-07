@@ -3,6 +3,9 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.7.6
+- The L2 and L3 voltages of an AC-THOR 9s now sit with the diagnostics, where the L1 voltage always was; on an existing installation they stay enabled and only move, a fresh setup gets them disabled.
+
 ## v1.7.5
 - New "Target Grid Power" control on devices that report it. This is the value the device's own controller regulates the grid power to, so it decides how much of the surplus is left unused -- negative means feed-in, positive means drawn from the grid. It could previously only be set at the device itself.
 

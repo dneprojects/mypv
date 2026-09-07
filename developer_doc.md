@@ -4,6 +4,11 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.7.6
+
+### Bug fixes
+- **`volt_L2` and `volt_L3` were plain sensors on an AC-THOR 9s, while `volt_mains` (L1) was diagnostic** ([#56](https://github.com/dneprojects/mypv/pull/56), by @vaterlangen). Both keys join `_DIAGNOSTIC_DISABLED_KEYS`, so `MpvSensor.__init__` gives them `EntityCategory.DIAGNOSTIC` and `entity_registry_enabled_default = False` like the L1 voltage. Only a 9s is affected -- single-phase devices never report the two keys. On an existing installation the entities keep their registry entry and stay enabled, since `entity_registry_enabled_default` is read at first creation only; they merely move into the diagnostics section. A fresh setup gets them disabled.
+
 ## v1.7.5
 
 ### `ptarget` as a number entity
