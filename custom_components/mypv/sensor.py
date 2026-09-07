@@ -98,6 +98,8 @@ _DIAGNOSTIC_DISABLED_KEYS = frozenset(
         "p9s_upd_state",
         "temp_ps",
         "volt_mains",
+        "volt_L2",
+        "volt_L3"
     }
 )
 
