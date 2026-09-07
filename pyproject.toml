@@ -30,7 +30,7 @@ exclude_lines = [
 [tool.ruff]
 # Mirrors Home Assistant core's ruff config; only the per-file-ignores paths
 # are adapted to the HACS layout (custom_components/mypv).
-required-version = ">=0.15.15"
+required-version = ">=0.16.5"
 line-length = 88
 target-version = "py314"
 
@@ -84,10 +84,13 @@ ignore = [
     "D407",
     "D417",
     "E501",
+    "ISC004",
+    "LOG004",
     "PLR0911",
     "PLR0912",
     "PLR0913",
     "PLR0915",
+    "PLR0917",
     "PLR2004",
     "PLW2901",
     "TC001",
