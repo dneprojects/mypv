@@ -4,6 +4,35 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.7.7
+
+### The energy meters stay in kWh, whatever the power sensor displays
+`MpvEnergySensor` builds on core's `IntegrationSensor`, constructed with
+`unit_prefix="k"` over a power source declared in watts. The unit is not taken
+from that declaration, though: `_derive_and_set_attributes_from_state` reads
+`ATTR_UNIT_OF_MEASUREMENT` off the source's **state**, and for a sensor with
+`device_class: power` that attribute is whatever unit the user picked in the
+entity settings -- `SensorEntity.unit_of_measurement` gives
+`_sensor_option_unit_of_measurement` the highest priority. Switching the power
+sensor to kW therefore fed "kW" into `_calculate_unit`, which appends the time
+unit and prefixes the "k": "kkWh".
+
+The reading was not wrong -- `_update_integral` divides by the same prefix, so
+"kkWh" means exactly what it says -- but Home Assistant cannot convert that
+unit, so the long-term statistics of a meter that had been recording kWh
+stopped with "The unit has changed" (issue #55). It only ever showed up on an
+installation where someone had changed that display unit, which is why it was
+not reproducible here.
+
+`_calculate_unit` is now overridden: for a source in W or kW it returns
+`UnitOfEnergy.KILO_WATT_HOUR` and sets `_unit_prefix` to the divisor that
+belongs to it (1000 or 1), so value and unit are corrected together rather than
+the label being patched over a wrong number. Any other source unit falls
+through to core's heuristic instead of being mislabelled. The divisor is set
+inside `_calculate_unit` rather than in `_derive_and_set_attributes_from_state`
+so that core's own device-class and icon handling -- both derived from the
+returned unit -- keep working untouched.
+
 ## v1.7.6
 
 ### Bug fixes

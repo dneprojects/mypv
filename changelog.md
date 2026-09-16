@@ -3,6 +3,9 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.7.7
+- Fixed: if you had switched a power sensor's displayed unit from W to kW in its entity settings, the energy meters next to it ended up in "kkWh" and Home Assistant stopped recording their long-term statistics, reporting "The unit has changed". They stay in kWh now, whichever unit the power sensor is shown in.
+
 ## v1.7.6
 - The L2 and L3 voltages of an AC-THOR 9s now sit with the diagnostics, where the L1 voltage always was; on an existing installation they stay enabled and only move, a fresh setup gets them disabled.
 

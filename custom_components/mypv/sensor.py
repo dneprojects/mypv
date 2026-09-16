@@ -68,6 +68,12 @@ def integration_sensor_args(
     return args
 
 
+# Divisor turning an integral of the source power into kWh, by source unit.
+_KWH_DIVISOR: dict[str, int] = {
+    UnitOfPower.WATT: 1000,
+    UnitOfPower.KILO_WATT: 1,
+}
+
 # Map a unit of measurement to the matching sensor device class.
 _DEVICE_CLASS_BY_UNIT: dict[str, SensorDeviceClass] = {
     UnitOfTemperature.CELSIUS: SensorDeviceClass.TEMPERATURE,
@@ -432,6 +438,15 @@ class MpvEnergySensor(IntegrationSensor, MpvSensor):
                 self._source_unique_id,
             )
         await super().async_added_to_hass()
+
+    def _calculate_unit(self, source_unit: str) -> str:
+        """Return kWh whatever unit the power sensor is displayed in."""
+        # Core derives the unit from the source *state*, which carries the unit
+        # the user picked in the entity settings: kW there gave "kkWh".
+        if (divisor := _KWH_DIVISOR.get(source_unit)) is None:
+            return super()._calculate_unit(source_unit)
+        self._unit_prefix = divisor
+        return UnitOfEnergy.KILO_WATT_HOUR
 
     @property
     def native_value(self) -> Decimal:

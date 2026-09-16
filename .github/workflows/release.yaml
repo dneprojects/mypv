@@ -1,18 +1,7 @@
 name: Auto Release from Manifest
 
-# Triggers AFTER the Tests workflow completes on main. The release job
-# checks whether the version currently in manifest.json is already
-# tagged on GitHub and is a no-op when it is — so this workflow is
-# self-healing: a release that gets stuck on a transient red CI run
-# is automatically published by the next green ``Tests`` run without
-# anyone having to bump the manifest just to retrigger.
-#
-# Unlike the habitron repository this one releases straight off
-# ``main``; there is no dev branch to merge across.
-#
-# ``workflow_dispatch`` is kept so the workflow can also be fired
-# manually from the Actions UI (e.g. after a tag was deleted by
-# hand).
+# Runs after a green Tests run on main; a no-op while the manifest version is
+# already tagged, so a release missed by a red run is picked up by the next one.
 on:
   workflow_run:
     workflows: ["Tests"]
@@ -36,9 +25,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
         with:
-          # workflow_run defaults to the triggering workflow's commit;
-          # be explicit so manual dispatches and rerun behaviour stay
-          # predictable.
+          # Explicit, so manual dispatch and reruns behave predictably.
           ref: main
           fetch-depth: 0
 
@@ -48,8 +35,8 @@ jobs:
           VERSION=$(jq -r '.version' custom_components/mypv/manifest.json)
           echo "Version found: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          # A version with any letter (e.g. 1.7.7b1, 1.7.7rc1) is a pre-release,
-          # so HACS only offers it to users who opted into betas.
+          # A letter in the version (1.7.7b1) marks a pre-release, which HACS
+          # only offers to users who opted into betas.
           if echo "$VERSION" | grep -qE '[a-zA-Z]'; then
             echo "prerelease=true" >> $GITHUB_OUTPUT
           else
@@ -71,21 +58,16 @@ jobs:
         id: extract_release_notes
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          # Look for header "## VERSION" or "## vVERSION" and take all
-          # lines until the next "## " header.
-          awk "/^## v?$VERSION/{flag=1; next} /^## /{flag=0} flag" CHANGELOG.md > release_notes.md
+          # From the "## VERSION" header to the next "## " one.
+          awk "/^## v?$VERSION/{flag=1; next} /^## /{flag=0} flag" changelog.md > release_notes.md
 
           # Fallback if the version isn't in the changelog yet.
           if [ ! -s release_notes.md ]; then
             echo "Release v$VERSION" > release_notes.md
           fi
 
-      # Published with the pre-installed ``gh`` rather than with
-      # ``softprops/action-gh-release`` (which the habitron repository uses):
-      # this repository restricts Actions to GitHub-owned, verified, and two
-      # explicitly listed ones, and a third-party action outside that list
-      # fails the whole run before its first step. ``gh release create``
-      # creates the tag as well, so nothing has to be pushed by hand.
+      # ``gh``, not softprops/action-gh-release: this repo allows only selected
+      # actions, and a third-party one fails the run before its first step.
       - name: Create Release
         if: steps.check_tag.outputs.exists == 'false'
         env:

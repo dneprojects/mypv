@@ -20,7 +20,7 @@ from custom_components.mypv.sensor import (
 )
 from homeassistant.components.integration.sensor import IntegrationSensor
 from homeassistant.components.sensor import SensorStateClass
-from homeassistant.const import UnitOfFrequency, UnitOfPower
+from homeassistant.const import UnitOfEnergy, UnitOfFrequency, UnitOfPower
 from homeassistant.util import slugify
 
 
@@ -164,6 +164,40 @@ def test_update_sensor_native_value() -> None:
     assert sensor.native_value is None
 
     sensor._handle_coordinator_update()
+
+
+def _energy_sensor_for_unit_calc() -> MpvEnergySensor:
+    """An energy sensor with just the fields ``_calculate_unit`` reads."""
+    sensor = MpvEnergySensor.__new__(MpvEnergySensor)
+    # As ``IntegrationSensor.__init__`` would leave them for unit_prefix="k".
+    sensor._unit_prefix = 1000
+    sensor._unit_prefix_string = "k"
+    sensor._unit_time_str = "h"
+    return sensor
+
+
+@pytest.mark.parametrize(
+    ("source_unit", "expected_divisor"),
+    [(UnitOfPower.WATT, 1000), (UnitOfPower.KILO_WATT, 1)],
+    ids=["source in W", "source displayed as kW"],
+)
+def test_energy_unit_stays_kwh_whatever_the_source_displays(
+    source_unit: str, expected_divisor: int
+) -> None:
+    """A power sensor switched to kW must not turn the integral into "kkWh"."""
+    sensor = _energy_sensor_for_unit_calc()
+
+    assert sensor._calculate_unit(source_unit) == UnitOfEnergy.KILO_WATT_HOUR
+    # The divisor scales the integral, so the value is corrected, not relabelled.
+    assert sensor._unit_prefix == expected_divisor
+
+
+def test_energy_unit_falls_back_for_an_unexpected_source_unit() -> None:
+    """An unknown source unit keeps the core heuristic rather than lying."""
+    sensor = _energy_sensor_for_unit_calc()
+
+    assert sensor._calculate_unit("Bq") == "kBqh"
+    assert sensor._unit_prefix == 1000
 
 
 async def test_energy_update_value_error() -> None:
