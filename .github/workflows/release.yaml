@@ -1,0 +1,93 @@
+name: Auto Release from Manifest
+
+# Triggers AFTER the Tests workflow completes on main. The release job
+# checks whether the version currently in manifest.json is already
+# tagged on GitHub and is a no-op when it is — so this workflow is
+# self-healing: a release that gets stuck on a transient red CI run
+# is automatically published by the next green ``Tests`` run without
+# anyone having to bump the manifest just to retrigger.
+#
+# Unlike the habitron repository this one releases straight off
+# ``main``; there is no dev branch to merge across.
+#
+# ``workflow_dispatch`` is kept so the workflow can also be fired
+# manually from the Actions UI (e.g. after a tag was deleted by
+# hand).
+on:
+  workflow_run:
+    workflows: ["Tests"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    # Only proceed when triggered manually OR when the upstream Tests
+    # workflow concluded successfully.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          # workflow_run defaults to the triggering workflow's commit;
+          # be explicit so manual dispatches and rerun behaviour stay
+          # predictable.
+          ref: main
+          fetch-depth: 0
+
+      - name: Get version from manifest
+        id: version
+        run: |
+          VERSION=$(jq -r '.version' custom_components/mypv/manifest.json)
+          echo "Version found: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          # A version with any letter (e.g. 1.7.7b1, 1.7.7rc1) is a pre-release,
+          # so HACS only offers it to users who opted into betas.
+          if echo "$VERSION" | grep -qE '[a-zA-Z]'; then
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "Tag v${{ steps.version.outputs.version }} already exists. Skipping."
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Extract Release Notes
+        if: steps.check_tag.outputs.exists == 'false'
+        id: extract_release_notes
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          # Look for header "## VERSION" or "## vVERSION" and take all
+          # lines until the next "## " header.
+          awk "/^## v?$VERSION/{flag=1; next} /^## /{flag=0} flag" CHANGELOG.md > release_notes.md
+
+          # Fallback if the version isn't in the changelog yet.
+          if [ ! -s release_notes.md ]; then
+            echo "Release v$VERSION" > release_notes.md
+          fi
+
+      - name: Create Release
+        if: steps.check_tag.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ steps.version.outputs.prerelease }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
