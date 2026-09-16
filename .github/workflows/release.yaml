@@ -59,7 +59,9 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           # From the "## VERSION" header to the next "## " one.
-          awk "/^## v?$VERSION/{flag=1; next} /^## /{flag=0} flag" changelog.md > release_notes.md
+          # Anchored, or "## v1.2.3" would also match its own "## v1.2.3b1" betas.
+          VER_RE=$(echo "$VERSION" | sed 's/\./\\./g')
+          awk -v ver="$VER_RE" '$0 ~ "^## v?" ver "$" {flag=1; next} /^## /{flag=0} flag' changelog.md > release_notes.md
 
           # Fallback if the version isn't in the changelog yet.
           if [ ! -s release_notes.md ]; then
