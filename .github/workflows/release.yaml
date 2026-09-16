@@ -80,14 +80,25 @@ jobs:
             echo "Release v$VERSION" > release_notes.md
           fi
 
+      # Published with the pre-installed ``gh`` rather than with
+      # ``softprops/action-gh-release`` (which the habitron repository uses):
+      # this repository restricts Actions to GitHub-owned, verified, and two
+      # explicitly listed ones, and a third-party action outside that list
+      # fails the whole run before its first step. ``gh release create``
+      # creates the tag as well, so nothing has to be pushed by hand.
       - name: Create Release
         if: steps.check_tag.outputs.exists == 'false'
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: Release v${{ steps.version.outputs.version }}
-          body_path: release_notes.md
-          draft: false
-          prerelease: ${{ steps.version.outputs.prerelease }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if [ "${{ steps.version.outputs.prerelease }}" = "true" ]; then
+            PRERELEASE="--prerelease"
+          else
+            PRERELEASE=""
+          fi
+          gh release create "v$VERSION" \
+            --title "Release v$VERSION" \
+            --notes-file release_notes.md \
+            --target main \
+            $PRERELEASE
