@@ -408,6 +408,7 @@ class MpvEnergySensor(IntegrationSensor, MpvSensor):
                 name=info.name,
                 unique_id=f"{device.serial_number}_{info.name}",
             ),
+            "device_class": SensorDeviceClass.ENERGY,
         )
         MpvSensor.__init__(self, device, key, info)
         # IntegrationSensor.__init__ sets an explicit _attr_name. As long as
