@@ -314,12 +314,7 @@ def test_integration_sensor_args_match_core(
     takes_hass: bool,
     takes_device_class: bool,
 ) -> None:
-    """The energy sensor's arguments bind against every supported core signature.
-
-    2026.8 dropped the positional ``hass`` argument and 2026.11 added a required
-    ``device_class``; either broke setup with a TypeError (issue #51), so the
-    call shape follows the installed signature.
-    """
+    """The energy sensor's arguments bind against every supported core signature."""
     monkeypatch.setattr(sensor_module, "_INTEGRATION_SENSOR_TAKES_HASS", takes_hass)
     monkeypatch.setattr(
         sensor_module, "_INTEGRATION_SENSOR_TAKES_DEVICE_CLASS", takes_device_class
