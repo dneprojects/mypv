@@ -4,6 +4,21 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.7.8
+
+### `IntegrationSensor` takes a required `device_class` on 2026.11
+Core 2026.11 added a device class option to the integral sensor
+(home-assistant/core#174545) as a required keyword-only `device_class`
+argument, so constructing `MpvEnergySensor` raised a `TypeError` and the whole
+entry failed to set up (#58). `integration_sensor_args` now passes
+`device_class=None` when the installed signature has the parameter
+(`_INTEGRATION_SENSOR_TAKES_DEVICE_CLASS`), next to the existing `hass` switch
+from 2026.8. `None` keeps the earlier behaviour: core derives the device class
+from the source sensor, so a power source still yields `energy`. Passing
+`ENERGY` outright would only skip that derivation, and passing it
+unconditionally would break every core before 2026.11. The frozen-signature
+test now covers 2026.7, 2026.8 and 2026.11.
+
 ## v1.7.7
 
 ### The energy meters stay in kWh, whatever the power sensor displays

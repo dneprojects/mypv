@@ -251,6 +251,23 @@ async def test_energy_monthly_reset_and_error() -> None:
     assert sensor._last_value == 0.0
 
 
+def _core_2026_11_init(
+    self: Any,
+    *,
+    integration_method: str,
+    name: str | None,
+    round_digits: int | None,
+    source_entity: str,
+    unique_id: str | None,
+    device_class: Any,
+    unit_prefix: str | None,
+    unit_time: Any,
+    max_sub_interval: Any,
+    device: Any = None,
+) -> None:
+    """The IntegrationSensor signature as of HA Core 2026.11."""
+
+
 def _core_2026_8_init(
     self: Any,
     *,
@@ -284,22 +301,36 @@ def _core_2026_7_init(
 
 
 @pytest.mark.parametrize(
-    ("core_init", "takes_hass"),
-    [(_core_2026_7_init, True), (_core_2026_8_init, False)],
+    ("core_init", "takes_hass", "takes_device_class"),
+    [
+        (_core_2026_7_init, True, False),
+        (_core_2026_8_init, False, False),
+        (_core_2026_11_init, False, True),
+    ],
 )
 def test_integration_sensor_args_match_core(
-    monkeypatch: pytest.MonkeyPatch, core_init: Any, takes_hass: bool
+    monkeypatch: pytest.MonkeyPatch,
+    core_init: Any,
+    takes_hass: bool,
+    takes_device_class: bool,
 ) -> None:
-    """The energy sensor's arguments bind against both core signatures.
+    """The energy sensor's arguments bind against every supported core signature.
 
-    2026.8 dropped the positional ``hass`` argument, which broke setup with a
-    TypeError (issue #51), so the call shape follows the installed signature.
+    2026.8 dropped the positional ``hass`` argument and 2026.11 added a required
+    ``device_class``; either broke setup with a TypeError (issue #51), so the
+    call shape follows the installed signature.
     """
     monkeypatch.setattr(sensor_module, "_INTEGRATION_SENSOR_TAKES_HASS", takes_hass)
+    monkeypatch.setattr(
+        sensor_module, "_INTEGRATION_SENSOR_TAKES_DEVICE_CLASS", takes_device_class
+    )
     args = sensor_module.integration_sensor_args(
         MagicMock(), "sensor.power", "Energy consumption", "SN1_Energy consumption"
     )
     assert ("hass" in args) is takes_hass
+    assert ("device_class" in args) is takes_device_class
+    if takes_device_class:
+        assert args["device_class"] is None
     inspect.signature(core_init).bind(MagicMock(), **args)
 
 

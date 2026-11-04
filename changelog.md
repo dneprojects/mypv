@@ -3,6 +3,9 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.7.8
+- Fixed: on Home Assistant 2026.11 the integration failed to set up with `IntegrationSensor.__init__() missing 1 required keyword-only argument: 'device_class'`, so none of the device's entities appeared. It sets up again, and still does on older Home Assistant versions; the energy meters keep the device class they had (#58).
+
 ## v1.7.7
 - Fixed: if you had switched a power sensor's displayed unit from W to kW in its entity settings, the energy meters next to it ended up in "kkWh" and Home Assistant stopped recording their long-term statistics, reporting "The unit has changed". They stay in kWh now, whichever unit the power sensor is shown in.
 

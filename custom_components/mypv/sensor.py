@@ -43,6 +43,11 @@ _LOGGER = logging.getLogger(__name__)
 _INTEGRATION_SENSOR_TAKES_HASS = (
     "hass" in inspect.signature(IntegrationSensor.__init__).parameters
 )
+# 2026.11 added a required keyword-only ``device_class``. ``None`` keeps the
+# behaviour of the earlier versions: the device class follows the source sensor.
+_INTEGRATION_SENSOR_TAKES_DEVICE_CLASS = (
+    "device_class" in inspect.signature(IntegrationSensor.__init__).parameters
+)
 
 
 def integration_sensor_args(
@@ -65,6 +70,8 @@ def integration_sensor_args(
     }
     if _INTEGRATION_SENSOR_TAKES_HASS:
         args["hass"] = hass
+    if _INTEGRATION_SENSOR_TAKES_DEVICE_CLASS:
+        args["device_class"] = None
     return args
 
 
