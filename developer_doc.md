@@ -4,6 +4,27 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.7.9
+
+### A refused connect is retried
+Firmware a0023006 answers with `Connection: close` and refuses the next TCP
+connect for a few milliseconds; `setup.jsn`, `data.jsn` and `control.html`
+are sent back to back and always hit that window (#60). `_retry_refused` wraps
+every request (`mypv_dev.jsn` in `open()`, `_request`, the `auth.jsn` login and
+the HTTPS `send`) and retries a `ClientConnectorError` whose `os_error` is a
+`ConnectionRefusedError` up to `_REFUSED_RETRIES` (5) times, `_REFUSED_DELAY`
+(0.2 s) apart. Any other connect error fails at once.
+
+The retry runs inside `_request`'s `try`, so the mode-0 HTTPS fallback from
+#54 only triggers once a refusal outlasts the retries; a brief refusal no
+longer flips an HTTP device to HTTPS. A device that only speaks HTTPS pays
+about one second once before the fallback.
+
+### Initialisation failures are logged
+`_open_and_init` returned `(None, None)` on a `MyPVConnectionError` without a
+trace, so the log only showed "No myPV device responded". It now logs a warning
+with `describe_error(err)`.
+
 ## v1.7.8
 
 ### `IntegrationSensor` takes a required `device_class` on 2026.11

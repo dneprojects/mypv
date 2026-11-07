@@ -2,10 +2,12 @@
 
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.mypv import async_remove_config_entry_device
 from custom_components.mypv.communicate import _POLL_FAILURES_TOLERATED
+from custom_components.mypv.connection import MyPVConnectionError
 from custom_components.mypv.const import COMM_HUB, CONF_HOSTS, DEV_IP, DOMAIN
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import ATTR_ENTITY_ID, CONF_PASSWORD
@@ -57,6 +59,25 @@ async def test_setup_data_unreadable(
     assert not await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
     assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
+
+
+async def test_setup_init_failure_is_logged(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_device: FakeWorld,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A device that fails to initialise names the cause in the log (#60)."""
+    mock_device.spec().error = MyPVConnectionError("http://1.2.3.4/data.jsn")
+    mock_config_entry.add_to_hass(hass)
+
+    assert not await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
+    assert (
+        f"Initialising myPV device at {MOCK_IP} failed: "
+        "MyPVConnectionError: http://1.2.3.4/data.jsn" in caplog.text
+    )
 
 
 async def test_setup_auth_required_starts_reauth(

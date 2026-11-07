@@ -161,7 +161,10 @@ class MypvCommunicator(DataUpdateCoordinator[None]):
             raise ConfigEntryAuthFailed(
                 f"Authentication required for myPV device at {ip_str}"
             ) from err
-        except MyPVConnectionError:
+        except MyPVConnectionError as err:
+            _LOGGER.warning(
+                "Initialising myPV device at %s failed: %s", ip_str, describe_error(err)
+            )
             await connection.close()
             self.connections.pop(ip_str, None)
             return None, None

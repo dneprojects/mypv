@@ -17,6 +17,7 @@ connection is serialised through ``_io_lock``.
 """
 
 import asyncio
+from collections.abc import Awaitable, Callable
 import json
 from typing import Any
 from urllib.parse import quote, urlencode, urlunsplit
@@ -31,6 +32,9 @@ _REQUEST_TIMEOUT = ClientTimeout(total=5)
 # avoids that.
 _ENCODE_URI_SAFE = "!*'()"
 _FORM_HEADERS = {"Content-Type": "application/x-www-form-urlencoded"}
+# Firmware a0023006 refuses connects for a moment after ``Connection: close`` (#60).
+_REFUSED_RETRIES = 5
+_REFUSED_DELAY = 0.2
 
 
 class MyPVConnectionError(Exception):
@@ -69,6 +73,18 @@ def describe_error(err: BaseException) -> str:
         )
         current = current.__cause__
     return " <- ".join(parts)
+
+
+async def _retry_refused[T](request: Callable[[], Awaitable[T]]) -> T:
+    """Run ``request``, retrying it while the device refuses the connect."""
+    for _ in range(_REFUSED_RETRIES):
+        try:
+            return await request()
+        except ClientConnectorError as exc:
+            if not isinstance(exc.os_error, ConnectionRefusedError):
+                raise
+        await asyncio.sleep(_REFUSED_DELAY)
+    return await request()
 
 
 def _encode_form(params: dict[str, Any]) -> str:
@@ -162,12 +178,17 @@ class _Connection:
         """
         await self.close()
         session = ClientSession(timeout=_REQUEST_TIMEOUT)
-        try:
+
+        async def _read_dev() -> tuple[int, str]:
             async with session.get(self._url("/mypv_dev.jsn"), ssl=self._SSL) as resp:
-                if resp.status != 200:
-                    await session.close()
-                    return False
-                self._mypv_dev = json.loads(await resp.text())
+                return resp.status, await resp.text()
+
+        try:
+            status, body = await _retry_refused(_read_dev)
+            if status != 200:
+                await session.close()
+                return False
+            self._mypv_dev = json.loads(body)
             if not await self._authenticate(session):
                 await session.close()
                 return False
@@ -224,20 +245,22 @@ class _Connection:
         protocol, ssl = self._scheme_for(path)
         cacheable = not query
         url = self._url(path, urlencode(query or {}), protocol)
-        try:
+
+        async def _get() -> tuple[int, str]:
             assert self._session is not None
             async with self._session.get(url, ssl=ssl) as response:
                 if response.status == 401:
                     raise MyPVAuthenticationError
-                text = await response.text()
-                if response.status != 200:
-                    if cacheable and path in self._cache:
-                        return self._cache[path]
-                    if text.strip():
-                        return text
-                    raise self._connection_error(
-                        url, f"HTTP {response.status} with an empty body"
-                    )
+                return response.status, await response.text()
+
+        try:
+            status, text = await _retry_refused(_get)
+            if status != 200:
+                if cacheable and path in self._cache:
+                    return self._cache[path]
+                if text.strip():
+                    return text
+                raise self._connection_error(url, f"HTTP {status} with an empty body")
         except (ClientError, TimeoutError) as exc:
             await self.close()
             if isinstance(exc, ClientConnectorError) and self._downgrades_to_http(path):
@@ -306,15 +329,19 @@ class MypvHttpsConnection(_Connection):
         """
         if not self._pw:
             return True
-        async with session.post(
-            self._url("/auth.jsn"),
-            data=_encode_form({"pw": self._pw}),
-            headers=_FORM_HEADERS,
-            ssl=self._SSL,
-        ) as response:
-            payload: dict[str, Any] = {}
-            if response.content_type == "application/json":
-                payload = json.loads(await response.text())
+
+        async def _login() -> dict[str, Any]:
+            async with session.post(
+                self._url("/auth.jsn"),
+                data=_encode_form({"pw": self._pw}),
+                headers=_FORM_HEADERS,
+                ssl=self._SSL,
+            ) as response:
+                if response.content_type == "application/json":
+                    return json.loads(await response.text())
+                return {}
+
+        payload = await _retry_refused(_login)
         if payload.get("auth", 0) == 1:
             return True
         raise MyPVAuthenticationError
@@ -329,7 +356,8 @@ class MypvHttpsConnection(_Connection):
             if not self.is_open() and not await self.open():
                 raise self._connection_error(self._url(path), "cannot open a session")
             body = _encode_form({**params, "pw": self._pw} if self._pw else params)
-            try:
+
+            async def _post() -> str:
                 assert self._session is not None
                 async with self._session.post(
                     self._url(path), data=body, headers=_FORM_HEADERS, ssl=self._SSL
@@ -337,6 +365,9 @@ class MypvHttpsConnection(_Connection):
                     if response.status == 401:
                         raise MyPVAuthenticationError
                     return await response.text()
+
+            try:
+                return await _retry_refused(_post)
             except (ClientError, TimeoutError) as exc:
                 await self.close()
                 raise self._connection_error(self._url(path)) from exc

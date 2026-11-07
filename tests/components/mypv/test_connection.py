@@ -14,7 +14,9 @@ from unittest.mock import AsyncMock
 from aiohttp.client_exceptions import ClientConnectionError, ClientConnectorError
 import pytest
 
+from custom_components.mypv import connection as connection_module
 from custom_components.mypv.connection import (
+    _REFUSED_RETRIES,
     MyPVAuthenticationError,
     MyPVConnectionError,
     MypvHttpConnection,
@@ -23,6 +25,16 @@ from custom_components.mypv.connection import (
     create_connection,
     describe_error,
 )
+
+
+@pytest.fixture(autouse=True)
+def no_refused_delay(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Retry refused connects without waiting."""
+    monkeypatch.setattr(connection_module, "_REFUSED_DELAY", 0)
+
+
+def _refused() -> ClientConnectorError:
+    return ClientConnectorError(None, ConnectionRefusedError(111, "refused"))  # type: ignore[arg-type]
 
 
 class _Tracker:
@@ -317,8 +329,9 @@ async def test_refused_http_downgrade_falls_back_to_https() -> None:
     signature of encryption mode 1/2. Since the HTTPS server runs in every mode,
     drop the downgrade instead of failing every poll until someone reloads.
     """
-    refused = ClientConnectorError(None, OSError(111, "refused"))
-    attempts = [_FakeResponse(enter_exc=refused)]
+    attempts = [
+        _FakeResponse(enter_exc=_refused()) for _ in range(_REFUSED_RETRIES + 1)
+    ]
     session = _FakeSession(lambda: attempts.pop(0) if attempts else _FakeResponse())
     conn = _https_connection(session, "secret")
     conn.set_sec_level(0)
@@ -333,9 +346,9 @@ async def test_refused_http_downgrade_falls_back_to_https() -> None:
 
     assert await conn.get_text("/control.html") == "OK"
 
-    # First attempt downgraded, the retry used the connection's own protocol.
-    assert session.calls[0][0].startswith("http://")
-    assert session.calls[1][0].startswith("https://")
+    # Every refused attempt was downgraded; only the fallback used HTTPS.
+    assert all(url.startswith("http://") for url, _ in session.calls[:-1])
+    assert session.calls[-1][0].startswith("https://")
 
     # And it does not downgrade again.
     session.calls.clear()
@@ -389,3 +402,72 @@ def test_connection_error_names_the_url_and_mode() -> None:
     assert (
         str(err) == "https://1.2.3.4/control.html (sec_level 0, http refused): HTTP 404"
     )
+
+
+async def test_briefly_refused_connect_is_retried() -> None:
+    """A connect refused right after ``Connection: close`` succeeds on retry (#60)."""
+    attempts = [_FakeResponse(enter_exc=_refused())]
+    session = _FakeSession(lambda: attempts.pop(0) if attempts else _FakeResponse())
+    conn = _connection(session)
+
+    assert await conn.get_text("/data.jsn") == "OK"
+    assert len(session.calls) == 2
+
+
+async def test_briefly_refused_downgrade_stays_on_http() -> None:
+    """A brief refusal on port 80 does not switch a mode-0 device to HTTPS."""
+    attempts = [_FakeResponse(enter_exc=_refused())]
+    session = _FakeSession(lambda: attempts.pop(0) if attempts else _FakeResponse())
+    conn = _https_connection(session, "secret")
+    conn.set_sec_level(0)
+
+    assert await conn.get_text("/control.html") == "OK"
+    assert all(url.startswith("http://") for url, _ in session.calls)
+    assert not conn._http_refused
+
+
+async def test_lasting_refusal_raises_after_retries() -> None:
+    """A device that keeps refusing is still reported as unreachable."""
+    session = _FakeSession(lambda: _FakeResponse(enter_exc=_refused()))
+    conn = _connection(session)
+
+    with pytest.raises(MyPVConnectionError):
+        await conn.get_text("/data.jsn")
+    assert len(session.calls) == _REFUSED_RETRIES + 1
+
+
+async def test_other_connect_errors_are_not_retried() -> None:
+    """Only a refused connect is retried; e.g. no route fails at once."""
+    no_route = ClientConnectorError(None, OSError(113, "no route"))  # type: ignore[arg-type]
+    session = _FakeSession(lambda: _FakeResponse(enter_exc=no_route))
+    conn = _connection(session)
+
+    with pytest.raises(MyPVConnectionError):
+        await conn.get_text("/data.jsn")
+    assert len(session.calls) == 1
+
+
+async def test_open_retries_a_refused_identification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``open()`` retries ``mypv_dev.jsn`` when the connect is briefly refused."""
+    attempts = [_FakeResponse(enter_exc=_refused())]
+    session = _FakeSession(
+        lambda: attempts.pop(0) if attempts else _FakeResponse(body='{"sn": "1"}')
+    )
+    monkeypatch.setattr(connection_module, "ClientSession", lambda **_: session)
+    conn = MypvHttpConnection("1.2.3.4")
+
+    assert await conn.open()
+    assert conn.mypv_dev == {"sn": "1"}
+    assert len(session.calls) == 2
+
+
+async def test_https_send_retries_a_refused_connect() -> None:
+    """A config write right after a read survives the refusal window."""
+    attempts = [_FakeResponse(enter_exc=_refused())]
+    session = _FakeSession(lambda: attempts.pop(0) if attempts else _FakeResponse())
+    conn = _https_connection(session, "secret")
+
+    assert await conn.send("/setup.jsn", {"ww1target": 600}) == "OK"
+    assert len(session.posts) == 2

@@ -3,6 +3,10 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.7.9
+- Fixed: an AC-THOR on firmware a0023006 failed to set up with "No myPV device responded". The device briefly refuses a new connection after each answer, and the integration hit that moment every time; it now retries for up to a second (#60).
+- A device that fails to initialise now logs why, instead of only the generic setup message.
+
 ## v1.7.8
 - Fixed: on Home Assistant 2026.11 the integration failed to set up with `IntegrationSensor.__init__() missing 1 required keyword-only argument: 'device_class'`, so none of the device's entities appeared. It sets up again, and still does on older Home Assistant versions; the energy meters keep the device class they had (#58).
 
