@@ -4,24 +4,17 @@ Home Assistant Component for myPV
 
 <a href="https://github.com/dneprojects/mypv"></a>
 <p align="center">
-  <a href="https://github.com/custom-components/hacs"><img src="https://img.shields.io/badge/HACS-Custom-orange.svg"></a>
+  <img src="https://img.shields.io/badge/Home%20Assistant-Marketplace-41BDF5.svg" alt="Home Assistant Marketplace">
   <img src="https://img.shields.io/github/v/release/dneprojects/mypv" alt="Current version">
 </p>
 
 ## Installation
 
-### HACS (recommended)
+myPV is listed in the Home Assistant Marketplace.
 
-Add user defined repository 'https://github.com/dneprojects/mypv' for type integration.
-Search for integration 'myPV', use the three dot menu on the right side to download.
-Restart Home Assistant.
-Add integration 'myPV' in the settings.
-
-### Manual download
-
-Copy this folder to 'config/custom_components/mypv'.
-Restart Home Assistant.
-Add integration 'myPV' in the settings section.
+1. Open the **Marketplace** from **Settings**, search for **myPV** and install it.
+2. Restart Home Assistant when asked.
+3. Devices on the same network are detected and offered under **Settings → Devices & Services**; otherwise add **myPV** there and enter the device's IP.
 
 ## Configuration
 
