@@ -4,6 +4,11 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.7.10
+
+Documentation only. README installs through the Marketplace, which reads only
+`README.md` at the installed or latest release, so `info.md` is removed.
+
 ## v1.7.9
 
 ### A refused connect is retried

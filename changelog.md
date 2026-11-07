@@ -3,6 +3,9 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.7.10
+- The documentation now installs through the Home Assistant Marketplace; the manual installation is gone. Nothing changes in the integration itself.
+
 ## v1.7.9
 - Fixed: an AC-THOR on firmware a0023006 failed to set up with "No myPV device responded". The device briefly refuses a new connection after each answer, and the integration hit that moment every time; it now retries for up to a second (#60).
 - A device that fails to initialise now logs why, instead of only the generic setup message.
