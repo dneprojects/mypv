@@ -4,6 +4,18 @@ Detailed, technical changelog for developers. End-user-facing release notes live
 in [`changelog.md`](changelog.md) as concise one-liners; this file keeps the full
 rationale and implementation detail for each release.
 
+## v1.7.11
+
+### The energy counters keep their value across a restart
+`MpvEnergySensor.native_value` returns `_last_value`, which `__init__` sets to
+0 and only `async_update` copied from the integral (`_state`). Core's
+`IntegrationSensor.async_added_to_hass` restores `_state`, but the first state
+was written right after it, before the first poll: 0 for about ten seconds,
+then the real counter (#61). A `total` counter going 0 -> 492 kWh is new
+consumption for a utility meter. `async_added_to_hass` now sets `_last_value`
+from the restored `_state`; without a stored state it stays 0. Covers the
+daily and monthly counters too.
+
 ## v1.7.10
 
 Documentation only. README installs through the Marketplace, which reads only

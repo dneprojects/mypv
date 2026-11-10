@@ -3,6 +3,9 @@
 User-facing release notes. For the detailed technical changelog see
 [`developer_doc.md`](developer_doc.md).
 
+## v1.7.11
+- Fixed: after every restart or reload of Home Assistant, the energy sensors reported 0 for about ten seconds before showing their real counter again. A utility meter took that jump as new consumption and added the whole counter to the day, e.g. 492 kWh for a heater that cannot draw more than 84 kWh a day. They now keep their value across the restart (#61).
+
 ## v1.7.10
 - The documentation now installs through the Home Assistant Marketplace; the manual installation is gone. Nothing changes in the integration itself.
 

@@ -444,6 +444,9 @@ class MpvEnergySensor(IntegrationSensor, MpvSensor):
                 self._source_unique_id,
             )
         await super().async_added_to_hass()
+        # Show the restored counter at once, not 0 until the first poll (#61).
+        if self._state is not None:
+            self._last_value = float(self._state)
 
     def _calculate_unit(self, source_unit: str) -> str:
         """Return kWh whatever unit the power sensor is displayed in."""

@@ -1,11 +1,14 @@
 """Tests for the myPV entities and their states."""
 
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    mock_restore_cache_with_extra_data,
+)
 
 from custom_components.mypv.const import CONF_HOSTS, DEV_IP, DOMAIN
 from homeassistant.components.sensor import SensorStateClass
-from homeassistant.const import CONF_PASSWORD, STATE_UNKNOWN
-from homeassistant.core import HomeAssistant
+from homeassistant.const import CONF_PASSWORD, EVENT_STATE_CHANGED, STATE_UNKNOWN
+from homeassistant.core import Event, HomeAssistant, State, callback
 from homeassistant.helpers import entity_registry as er
 
 from .conftest import DeviceSpec, FakeWorld
@@ -225,3 +228,41 @@ async def test_9s_entities_without_a_control_value_timeout(
     out_state = hass.states.get(out_status)
     assert out_state is not None
     assert out_state.attributes["state_class"] == SensorStateClass.MEASUREMENT
+
+
+async def test_energy_counter_restored_without_a_zero(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_device: FakeWorld,
+) -> None:
+    """After a restart the energy counter shows its restored value, never 0 (#61)."""
+    entity_id = f"sensor.{PREFIX}_energy_consumption"
+    mock_restore_cache_with_extra_data(
+        hass,
+        [
+            (
+                State(entity_id, "492.09"),
+                {
+                    "native_value": 492.09,
+                    "native_unit_of_measurement": "kWh",
+                    "source_entity": None,
+                    "last_valid_state": "492.09",
+                },
+            )
+        ],
+    )
+    states: list[str] = []
+
+    @callback
+    def _record(event: Event) -> None:
+        if event.data["entity_id"] == entity_id and event.data["new_state"]:
+            states.append(event.data["new_state"].state)
+
+    hass.bus.async_listen(EVENT_STATE_CHANGED, _record)
+    mock_config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert states
+    assert float(states[0]) == 492.09
+    assert all(float(state) != 0 for state in states)
